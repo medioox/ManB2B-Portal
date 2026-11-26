@@ -15,7 +15,7 @@ from rest_framework.views import APIView
 from apps.accounts.scoping import customers_for, scope_by_customer
 from apps.core.idempotency import idempotent
 from apps.core.pdf import build_table_doc, jdate, money
-from apps.core.permissions import CustomerCanSeeFinance, IsManager
+from apps.core.permissions import CustomerCanSeeFinance, Perm
 from apps.core.services import notify_customer
 from apps.orders.models import Order
 
@@ -25,6 +25,10 @@ from .serializers import ChequeSerializer, InvoiceSerializer, LedgerEntrySeriali
 
 
 def _finance_guard(user):
+    from apps.accounts.perms import has_perm
+
+    if not user.is_customer and not (has_perm(user, "finance") or has_perm(user, "customers_manage")):
+        raise PermissionDenied("سمت شما به بخش مالی دسترسی ندارد.")
     if user.is_customer and not CustomerCanSeeFinance().has_permission(type("R", (), {"user": user}), None):
         raise PermissionDenied("شما به بخش مالی دسترسی ندارید.")
 
@@ -119,7 +123,7 @@ class ChequeViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retri
             customer = get_object_or_404(customers_for(u), pk=self.request.data.get("customer"))
         serializer.save(customer=customer, submitted_by=u)
 
-    @action(detail=True, methods=["post"], permission_classes=[IsManager])
+    @action(detail=True, methods=["post"], permission_classes=[Perm("finance_manage")])
     def set_status(self, request, pk=None):
         cheque = self.get_object()
         new = request.data.get("status")

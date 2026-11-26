@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import { Icon } from "@/components/icons";
 import { Badge, Button, Card, ConfirmButton, Empty, Field, Img, Input, Loading, Modal, PageHeader, Pagination, Select, Tabs, Textarea, cx, useAction } from "@/components/ui";
 import { api, Page } from "@/lib/api";
-import { isManager, useAuth } from "@/lib/auth";
+import { can, useAuth } from "@/lib/auth";
 import { num } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 
@@ -12,7 +12,7 @@ const size = (b: number) => (b > 1e6 ? `${num(b / 1e6, 1)} مگابایت` : `${
 
 export default function Marketing() {
   const { user } = useAuth();
-  const manager = isManager(user);
+  const manager = can(user, "marketing");
   const [kind, setKind] = useState("");
   const [campaign, setCampaign] = useState<number | "">("");
   const [page, setPage] = useState(1);

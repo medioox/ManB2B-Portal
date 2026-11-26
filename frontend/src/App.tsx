@@ -2,7 +2,7 @@
 import React, { useEffect } from "react";
 import { Shell } from "@/components/Shell";
 import { Empty, Loading, ToastProvider } from "@/components/ui";
-import { AuthProvider, canFinance, canOrder, homeFor, useAuth } from "@/lib/auth";
+import { AuthProvider, can, canFinance, canOrder, homeFor, useAuth } from "@/lib/auth";
 import { CartProvider } from "@/lib/cart";
 import { Link, useNav } from "@/lib/nav";
 import { ROUTES } from "./routes";
@@ -25,7 +25,7 @@ function Router() {
   const View = route.view;
   if (route.bare) return <View />;
   const allowed = !!user && (!route.roles || route.roles.includes(user.role)) &&
-    (route.perm !== "finance" || canFinance(user)) && (route.perm !== "order" || canOrder(user)) && (route.perm !== "owner" || user.is_customer_owner);
+    (route.perm !== "finance" || canFinance(user)) && (route.perm !== "order" || canOrder(user)) && (route.perm !== "owner" || user.is_customer_owner) && (!route.staff || can(user, ...route.staff));
   return (
     <Shell>
       {allowed ? <View key={path} /> : <div className="card"><Empty icon="shield" title="به این بخش دسترسی ندارید" text="اگر فکر می‌کنید باید دسترسی داشته باشید، با مدیر حساب یا مدیر فروش تماس بگیرید." /></div>}

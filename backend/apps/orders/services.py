@@ -49,7 +49,9 @@ def check_credit(customer, amount, exclude_order=None):
 
 
 def _staff_to_notify(customer):
-    users = list(User.objects.filter(role=Role.SALES_MANAGER, is_active=True))
+    from apps.accounts.perms import users_with_perm
+
+    users = [u for u in users_with_perm("orders_manage") if u.role != Role.SALES_REP and u.role != Role.ADMIN]
     if customer.sales_rep:
         users.append(customer.sales_rep)
     return users

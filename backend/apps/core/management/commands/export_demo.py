@@ -7,7 +7,9 @@ from django.core.management.base import BaseCommand
 from django.core.serializers.json import DjangoJSONEncoder
 from django.utils import timezone
 
-from apps.accounts.models import Customer, User
+from apps.accounts.models import Customer, Position, User
+from apps.accounts.perms import SECTIONS, permissions_of, scope_of
+from apps.accounts.serializers import PositionSerializer
 from apps.accounts.serializers import CustomerSerializer
 from apps.catalog.models import Category, PriceGroup, Product, VolumeDiscount
 from apps.catalog.serializers import (
@@ -51,14 +53,18 @@ class Command(BaseCommand):
     def handle(self, out, **kw):
         many = lambda S, qs: S(qs, many=True).data  # noqa: E731
         users = []
-        for u in User.objects.all().prefetch_related("regions"):
+        for u in User.objects.all().prefetch_related("regions").select_related("position"):
             users.append({
                 "id": u.id, "username": u.username, "phone": u.phone, "first_name": u.first_name,
-                "last_name": u.last_name, "role": u.role, "role_display": u.get_role_display(),
+                "last_name": u.last_name, "role": u.role,
+                "role_display": u.position.name if u.position_id else u.get_role_display(),
+                "position": u.position_id, "position_name": u.position.name if u.position_id else None,
+                "permissions": permissions_of(u), "scope": scope_of(u) if u.role in ("admin", "sales_manager", "sales_rep", "staff") else None,
+                "last_login": u.last_login, "date_joined": u.date_joined,
                 "is_customer_owner": u.is_customer_owner, "can_order": u.can_order,
                 "can_view_finance": u.can_view_finance, "job_title": u.job_title, "customer_id": u.customer_id,
                 "region_ids": [r.id for r in u.regions.all()], "is_active": u.is_active,
-                "password": {"admin": "admin1234"}.get(u.username, "demo1234") if u.role in ("admin", "sales_manager", "sales_rep") else None,
+                "password": {"admin": "admin1234"}.get(u.username, "demo1234") if u.role in ("admin", "sales_manager", "sales_rep", "staff") else None,
             })
         provinces = many(ProvinceSerializer, Province.objects.prefetch_related("cities"))
         pops = {}
@@ -72,6 +78,8 @@ class Command(BaseCommand):
         data = {
             "exported_at": timezone.now(),
             "users": users,
+            "positions": [dict(p) for p in PositionSerializer(Position.objects.all(), many=True).data],
+            "sections": [{"key": k, "label": l} for k, l in SECTIONS],
             "provinces": provinces,
             "customers": many(CustomerSerializer, Customer.objects.select_related("city__province", "price_group", "sales_rep").prefetch_related("documents")),
             "categories": many(CategorySerializer, Category.objects.all()),

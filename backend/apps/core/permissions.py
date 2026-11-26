@@ -1,22 +1,11 @@
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
-from apps.accounts.roles import CUSTOMER_ROLES, Role
+from apps.accounts.perms import has_perm
+from apps.accounts.roles import CUSTOMER_ROLES, STAFF_ROLES
 
 
 def is_staff_role(user):
-    return user.is_authenticated and user.role in (Role.ADMIN, Role.SALES_MANAGER, Role.SALES_REP)
-
-
-class IsAdmin(BasePermission):
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role == Role.ADMIN
-
-
-class IsManager(BasePermission):
-    """Admin or sales manager."""
-
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role in (Role.ADMIN, Role.SALES_MANAGER)
+    return user.is_authenticated and user.role in STAFF_ROLES
 
 
 class IsStaffRole(BasePermission):
@@ -24,13 +13,54 @@ class IsStaffRole(BasePermission):
         return is_staff_role(request.user)
 
 
-class IsManagerOrReadOnly(BasePermission):
-    def has_permission(self, request, view):
-        if not request.user.is_authenticated:
-            return False
-        if request.method in SAFE_METHODS:
-            return True
-        return request.user.role in (Role.ADMIN, Role.SALES_MANAGER)
+def Perm(key, *alt):
+    """Staff user whose position includes `key` (or any of `alt`)."""
+
+    class _P(BasePermission):
+        message = "سمت شما به این بخش دسترسی ندارد."
+
+        def has_permission(self, request, view):
+            u = request.user
+            return is_staff_role(u) and any(has_perm(u, k) for k in (key, *alt))
+
+    _P.__name__ = f"Perm_{key}"
+    return _P
+
+
+def ReadOrPerm(key):
+    """Anyone logged in may read (customers see their own catalogue etc.); writing needs `key`."""
+
+    class _P(BasePermission):
+        message = "سمت شما اجازه‌ی تغییر این بخش را ندارد."
+
+        def has_permission(self, request, view):
+            u = request.user
+            if not u.is_authenticated:
+                return False
+            if request.method in SAFE_METHODS:
+                return True
+            return is_staff_role(u) and has_perm(u, key)
+
+    _P.__name__ = f"ReadOrPerm_{key}"
+    return _P
+
+
+def StaffNeeds(key):
+    """Customers pass (their own data is scoped elsewhere); staff need `key`."""
+
+    class _P(BasePermission):
+        message = "سمت شما به این بخش دسترسی ندارد."
+
+        def has_permission(self, request, view):
+            u = request.user
+            if not u.is_authenticated:
+                return False
+            if u.role in CUSTOMER_ROLES:
+                return True
+            return has_perm(u, key)
+
+    _P.__name__ = f"StaffNeeds_{key}"
+    return _P
 
 
 class IsApprovedCustomer(BasePermission):

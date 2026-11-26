@@ -13,7 +13,7 @@ from apps.accounts.scoping import scope_by_customer
 from apps.catalog.models import Product
 from apps.catalog.views import visible_products_for
 from apps.core.idempotency import idempotent
-from apps.core.permissions import CustomerCanOrder, IsStaffRole
+from apps.core.permissions import CustomerCanOrder, IsStaffRole, Perm, StaffNeeds
 from apps.finance.models import credit_summary
 
 from . import services
@@ -101,6 +101,7 @@ class CheckoutView(APIView):
 class OrderViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     """Orders scoped by role: customer → own, rep → own region/customers, manager/admin → all."""
 
+    permission_classes = [StaffNeeds("orders")]
     filterset_fields = {
         "status": ["exact", "in"], "city": ["exact"], "city__province": ["exact"], "sales_rep": ["exact"],
         "customer": ["exact"], "created_at": ["gte", "lte"], "is_lab_order": ["exact"],
@@ -153,20 +154,20 @@ class OrderViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
         return Response(self.get_serializer(order).data)
 
     # ---- staff actions ----
-    @action(detail=True, methods=["post"], permission_classes=[IsStaffRole])
+    @action(detail=True, methods=["post"], permission_classes=[Perm("orders_manage")])
     def set_status(self, request, pk=None):
         order = self.get_object()
         services.change_status(order, request.data.get("status"), request.user, request.data.get("note", ""))
         return Response(OrderStaffDetailSerializer(order, context={"request": request}).data)
 
-    @action(detail=True, methods=["post"], permission_classes=[IsStaffRole])
+    @action(detail=True, methods=["post"], permission_classes=[Perm("orders_manage")])
     def edit_items(self, request, pk=None):
         order = self.get_object()
         services.edit_items(order, request.data.get("items", []), request.user)
         order.refresh_from_db()
         return Response(OrderStaffDetailSerializer(order, context={"request": request}).data)
 
-    @action(detail=True, methods=["post"], permission_classes=[IsStaffRole])
+    @action(detail=True, methods=["post"], permission_classes=[Perm("orders", "orders_manage")])
     def add_note(self, request, pk=None):
         order = self.get_object()
         text = (request.data.get("text") or "").strip()
@@ -175,7 +176,7 @@ class OrderViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
         note = OrderNote.objects.create(order=order, author=request.user, text=text)
         return Response(OrderNoteSerializer(note).data, status=201)
 
-    @action(detail=False, permission_classes=[IsStaffRole])
+    @action(detail=False, permission_classes=[Perm("orders")])
     def stats(self, request):
         qs = self.filter_queryset(self.get_queryset())
         return Response({r["status"]: r["n"] for r in qs.values("status").annotate(n=Count("id")).order_by()})

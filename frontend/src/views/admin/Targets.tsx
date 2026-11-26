@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import { Badge, Button, Card, Empty, Field, Input, Loading, PageHeader, Progress, Table, useAction } from "@/components/ui";
 import { api } from "@/lib/api";
-import { isManager, useAuth } from "@/lib/auth";
+import { can, useAuth } from "@/lib/auth";
 import { num, short, toEnDigits } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 
@@ -10,7 +10,7 @@ const MONTHS = ["فروردین", "اردیبهشت", "خرداد", "تیر", "�
 
 export default function Targets() {
   const { user } = useAuth();
-  const manager = isManager(user);
+  const manager = can(user, "targets") && user?.scope === "all";
   const { data: first } = useApi<any>("/rewards/overview/");
   const [ym, setYm] = useState<{ y: number; m: number } | null>(null);
   const cur = ym ?? (first ? { y: first.year, m: first.month } : null);

@@ -2,18 +2,19 @@
 import React, { useState } from "react";
 import { Badge, Button, Card, Empty, Input, Loading, Money, PageHeader, Pagination, Progress, StatusChip, Table, Tabs, useAction } from "@/components/ui";
 import { api, Page } from "@/lib/api";
-import { isManager, useAuth } from "@/lib/auth";
+import { can, useAuth } from "@/lib/auth";
 import { fa, jdate, short, toEnDigits } from "@/lib/format";
 import { useApi, useDebounced } from "@/lib/hooks";
 import { Link } from "@/lib/nav";
 import type { Customer } from "@/lib/types";
 
 export default function FinanceAdmin() {
+  const { user } = useAuth();
   const [tab, setTab] = useState<"cheques" | "credit" | "payments">("cheques");
   return (
     <>
       <PageHeader title="مالی، چک و کنترل اعتبار" subtitle="وصول چک‌ها، سقف اعتبار مشتری‌ها و جلوگیری از سفارش وقتی اعتبار تمام شده" />
-      <div className="mb-4"><Tabs value={tab} onChange={setTab} items={[{ value: "cheques", label: "چک‌ها" }, { value: "credit", label: "سقف اعتبار مشتری‌ها" }]} /></div>
+      <div className="mb-4"><Tabs value={tab} onChange={setTab} items={[{ value: "cheques", label: "چک‌ها" }, ...(can(user, "customers", "customers_manage") ? [{ value: "credit" as const, label: "سقف اعتبار مشتری‌ها" }] : [])]} /></div>
       {tab === "cheques" ? <ChequeQueue /> : <CreditControl />}
     </>
   );
@@ -41,7 +42,7 @@ function ChequeQueue() {
                 <td className="td num">{jdate(c.due_date)}{c.status === "pending" && c.due_date < today && <Badge color="bad" className="mr-1">سررسید گذشته</Badge>}</td>
                 <td className="td"><StatusChip status={c.status} label={c.status_display} /></td>
                 <td className="td">{c.image ? <a href={c.image} target="_blank" rel="noreferrer" className="text-navy-500 text-xs">مشاهده</a> : "—"}</td>
-                <td className="td text-left whitespace-nowrap">{isManager(user) && c.status === "pending" && <>
+                <td className="td text-left whitespace-nowrap">{can(user, "finance_manage") && c.status === "pending" && <>
                   <Button size="sm" variant="secondary" onClick={() => set(c.id, "cleared", "چک وصول شد و در حساب مشتری ثبت شد")}>وصول شد</Button>
                   <Button size="sm" variant="ghost" onClick={() => set(c.id, "bounced", "چک برگشتی ثبت شد")}>برگشت خورد</Button></>}
                 </td>
@@ -86,7 +87,7 @@ function CreditControl() {
       {!data ? <Loading /> : (
         <div className="px-5"><Table>
           <thead><tr><th className="th">مشتری</th><th className="th">مانده بدهی</th><th className="th">اعتبار باقی‌مانده</th><th className="th">معوق</th><th className="th">سقف اعتبار (ریال)</th><th className="th">اعتبار تمام شد</th><th className="th"></th></tr></thead>
-          <tbody>{data.results.map((c) => <CreditRow key={c.id} c={c} onSaved={reload} manager={isManager(user)} />)}</tbody>
+          <tbody>{data.results.map((c) => <CreditRow key={c.id} c={c} onSaved={reload} manager={can(user, "customers_manage")} />)}</tbody>
         </Table></div>
       )}
       <div className="px-5 pb-4">{data && <Pagination page={page} count={data.count} pageSize={15} onChange={setPage} />}</div>

@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import { Icon } from "@/components/icons";
 import { Button, Card, Empty, Field, Input, KV, Loading, Money, PageHeader, Pagination, Select, StatusChip, Table, Tabs, Textarea, useAction } from "@/components/ui";
 import { api, Page } from "@/lib/api";
-import { isManager, useAuth } from "@/lib/auth";
+import { can, seesAll, useAuth } from "@/lib/auth";
 import { ago, fa, jtime, num } from "@/lib/format";
 import { useProvinces } from "@/lib/geo";
 import { useApi, useDebounced } from "@/lib/hooks";
@@ -27,7 +27,7 @@ export default function AdminOrders() {
   const [page, setPage] = useState(1);
   const q = useDebounced(search);
   const { data: provinces } = useProvinces();
-  const { data: reps } = useApi<any[]>(isManager(user) ? "/staff/" : null, { role: "sales_rep" });
+  const { data: reps } = useApi<any[]>(seesAll(user) ? "/staff/" : null, { assignable: 1 });
   const filters = { status: params.customer ? "" : status, city, city__province: province, sales_rep: rep, search: q, customer: params.customer };
   const { data, loading, reload } = useApi<Page<Order>>("/orders/", { ...filters, page });
   const { data: stats, reload: reloadStats } = useApi<Record<string, number>>("/orders/stats/", { city, city__province: province, sales_rep: rep, customer: params.customer });
@@ -61,7 +61,7 @@ export default function AdminOrders() {
                 <td className="td">{o.customer_name}</td><td className="td">{o.city_name}</td><td className="td text-xs">{o.sales_rep_name || "—"}</td>
                 <td className="td num">{num(o.total_cartons)}</td><td className="td"><Money v={o.total} /></td><td className="td text-xs">{ago(o.created_at)}</td>
                 <td className="td"><StatusChip status={o.status} label={o.status_display} /></td>
-                <td className="td text-left whitespace-nowrap">{NEXT[o.status] && <Button size="sm" variant="secondary" onClick={() => advance(o)}>{NEXT[o.status]!.l}</Button>}</td>
+                <td className="td text-left whitespace-nowrap">{NEXT[o.status] && can(user, "orders_manage") && <Button size="sm" variant="secondary" onClick={() => advance(o)}>{NEXT[o.status]!.l}</Button>}</td>
               </tr>
             ))}</tbody>
           </Table></div>
@@ -74,6 +74,8 @@ export default function AdminOrders() {
 
 export function AdminOrderDetail() {
   const { params } = useNav();
+  const { user } = useAuth();
+  const manage = can(user, "orders_manage");
   const { data: o, reload } = useApi<Order>(`/orders/${params.id}/`);
   const { data: picker } = useApi<any[]>("/product-picker/");
   const { run, busy } = useAction();
@@ -85,7 +87,7 @@ export function AdminOrderDetail() {
   if (!o) return <Loading />;
   const n = NEXT[o.status];
   const setStatus = async (s: OrderStatus) => { if (await run(() => api.post(`/orders/${o.id}/set_status/`, { status: s, note: statusNote }), "وضعیت به‌روزرسانی و به مشتری پیامک شد")) { setStatusNote(""); reload(); } };
-  const editable = o.status === "submitted" || o.status === "confirmed";
+  const editable = manage && (o.status === "submitted" || o.status === "confirmed");
   return (
     <div className="space-y-6">
       <PageHeader title={`سفارش ${fa(o.number)}`} subtitle={`${o.customer_name} · ${o.city_name} · ${jtime(o.created_at)}`}
@@ -136,7 +138,7 @@ export function AdminOrderDetail() {
           </Card>
         </div>
         <div className="space-y-6 lg:sticky lg:top-24">
-          <Card title="تغییر وضعیت">
+          {manage && <Card title="تغییر وضعیت">
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-sm">وضعیت فعلی: <StatusChip status={o.status} label={o.status_display} /></div>
               {(n || o.status !== "delivered") && o.status !== "canceled" && <Field label="توضیح برای مشتری (اختیاری)"><Textarea id="st_note" rows={2} value={statusNote} onChange={(e) => setStatusNote(e.target.value)} placeholder="مثلاً شماره بارنامه: ۱۲۳۴۵" /></Field>}
@@ -146,7 +148,7 @@ export function AdminOrderDetail() {
               </div>
               {o.accounting_ref ? <p className="text-xs text-ok">ثبت در حسابداری: {o.accounting_ref}</p> : o.status !== "submitted" && <p className="text-xs text-warn">در صف ارسال به حسابداری</p>}
             </div>
-          </Card>
+          </Card>}
           <Card title="مشتری">
             <KV k="نام" v={<Link to={`/admin/customers/review?id=${o.customer}`} className="text-navy-600">{o.customer_name}</Link>} />
             <KV k="تلفن" v={<span dir="ltr">{fa(o.customer_phone)}</span>} />

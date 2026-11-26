@@ -3,9 +3,10 @@ from rest_framework import serializers
 
 from apps.network.models import City, Province
 
-from .models import Customer, CustomerDocument, User
+from .models import Customer, CustomerDocument, Position, User
 from .otp import normalize_phone, read_registration_token
-from .roles import CUSTOMER_ROLES, STAFF_ROLES
+from .perms import SECTION_KEYS, permissions_of, scope_of
+from .roles import CUSTOMER_ROLES, STAFF_ROLES, Role
 
 
 class CustomerDocumentSerializer(serializers.ModelSerializer):
@@ -48,20 +49,33 @@ class CustomerSelfSerializer(CustomerSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
-    role_display = serializers.CharField(source="get_role_display", read_only=True)
+    role_display = serializers.SerializerMethodField()
     full_name = serializers.SerializerMethodField()
     customer = CustomerSelfSerializer(read_only=True)
     region_ids = serializers.PrimaryKeyRelatedField(source="regions", many=True, read_only=True)
+    permissions = serializers.SerializerMethodField()
+    scope = serializers.SerializerMethodField()
+    position_name = serializers.CharField(source="position.name", read_only=True, default=None)
 
     class Meta:
         model = User
         fields = [
             "id", "username", "phone", "first_name", "last_name", "full_name", "role", "role_display",
             "is_customer_owner", "can_order", "can_view_finance", "job_title", "customer", "region_ids",
+            "permissions", "scope", "position", "position_name",
         ]
 
     def get_full_name(self, obj):
         return obj.get_full_name()
+
+    def get_role_display(self, obj):
+        return obj.position.name if obj.position_id else obj.get_role_display()
+
+    def get_permissions(self, obj):
+        return permissions_of(obj)
+
+    def get_scope(self, obj):
+        return scope_of(obj) if obj.role in STAFF_ROLES else None
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -142,40 +156,130 @@ class SubUserSerializer(serializers.ModelSerializer):
         return user
 
 
-class StaffUserSerializer(serializers.ModelSerializer):
+class PositionSerializer(serializers.ModelSerializer):
+    users_count = serializers.IntegerField(read_only=True, default=0)
+    scope_display = serializers.CharField(source="get_scope_display", read_only=True)
+
+    class Meta:
+        model = Position
+        fields = ["id", "name", "description", "permissions", "scope", "scope_display", "base_role", "is_system",
+                  "users_count"]
+        read_only_fields = ["is_system", "base_role"]
+
+    def validate_permissions(self, value):
+        bad = [k for k in value if k not in SECTION_KEYS]
+        if bad:
+            raise serializers.ValidationError("بخش نامعتبر: " + ", ".join(bad))
+        return sorted(set(value), key=SECTION_KEYS.index)
+
+    def validate(self, data):
+        if self.instance and self.instance.base_role == Role.ADMIN:
+            raise serializers.ValidationError("سمت «ادمین کل» همیشه دسترسی کامل دارد و قابل ویرایش نیست.")
+        return data
+
+
+class AdminUserSerializer(serializers.ModelSerializer):
+    """Admin-side user management: staff users (with a position) and customer accounts."""
+
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    role_display = serializers.CharField(source="get_role_display", read_only=True)
+    role_display = serializers.SerializerMethodField()
+    position_name = serializers.CharField(source="position.name", read_only=True, default=None)
     regions = serializers.PrimaryKeyRelatedField(many=True, required=False, queryset=Province.objects.all())
     customers_count = serializers.IntegerField(read_only=True, default=0)
+    kind = serializers.SerializerMethodField()
+    business_name = serializers.CharField(source="customer.business_name", read_only=True, default=None)
+    # customer-account creation
+    customer_type = serializers.ChoiceField(choices=[(r.value, r.label) for r in CUSTOMER_ROLES], write_only=True, required=False)
+    customer_profile = serializers.DictField(write_only=True, required=False)
 
     class Meta:
         model = User
-        fields = ["id", "username", "phone", "first_name", "last_name", "role", "role_display", "regions",
-                  "is_active", "password", "customers_count"]
+        fields = ["id", "username", "phone", "first_name", "last_name", "job_title", "role", "role_display", "position",
+                  "position_name", "regions", "is_active", "password", "customers_count", "kind", "business_name",
+                  "customer", "customer_type", "customer_profile", "last_login", "date_joined"]
+        read_only_fields = ["role", "customer", "last_login", "date_joined"]
+        extra_kwargs = {"username": {"required": False}}
 
-    def validate_role(self, value):
-        if value not in STAFF_ROLES:
-            raise serializers.ValidationError("نقش نامعتبر است.")
-        return value
+    def get_role_display(self, obj):
+        return obj.position.name if obj.position_id else obj.get_role_display()
+
+    def get_kind(self, obj):
+        return "customer" if obj.role in CUSTOMER_ROLES else "staff"
 
     def validate_phone(self, value):
-        return normalize_phone(value) if value else None
+        if not value:
+            return None
+        phone = normalize_phone(value)
+        qs = User.objects.filter(phone=phone)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("این شماره قبلاً در سامانه ثبت شده است.")
+        return phone
 
+    def validate(self, data):
+        creating = self.instance is None
+        if creating and not data.get("position") and not data.get("customer_type"):
+            raise serializers.ValidationError({"position": ["سمت کاربر را انتخاب کنید."]})
+        if creating and data.get("customer_type"):
+            prof = data.get("customer_profile") or {}
+            for k, label in (("business_name", "نام کسب‌وکار"), ("city", "شهر"), ("address", "آدرس")):
+                if not prof.get(k):
+                    raise serializers.ValidationError({k: [f"{label} الزامی است."]})
+            if not data.get("phone"):
+                raise serializers.ValidationError({"phone": ["مشتری با موبایل وارد می‌شود؛ شماره را وارد کنید."]})
+        if creating and not data.get("username"):
+            data["username"] = data.get("phone") or ""
+            if not data["username"]:
+                raise serializers.ValidationError({"username": ["نام کاربری یا موبایل لازم است."]})
+        if data.get("username") and User.objects.filter(username=data["username"]).exclude(
+                pk=getattr(self.instance, "pk", None)).exists():
+            raise serializers.ValidationError({"username": ["این نام کاربری قبلاً استفاده شده است."]})
+        return data
+
+    @transaction.atomic
     def create(self, data):
+        from apps.catalog.models import PriceGroup
+
         regions = data.pop("regions", [])
         password = data.pop("password", "")
+        ctype = data.pop("customer_type", None)
+        prof = data.pop("customer_profile", None) or {}
         user = User(**data)
-        user.is_staff = data.get("role") == "admin"
+        if ctype:
+            from django.utils import timezone
+
+            customer = Customer.objects.create(
+                type=ctype, business_name=prof["business_name"],
+                owner_name=f"{data.get('first_name', '')} {data.get('last_name', '')}".strip() or prof["business_name"],
+                phone=data["phone"], economic_code=prof.get("economic_code", ""), license_number=prof.get("license_number", ""),
+                city=City.objects.get(pk=prof["city"]), address=prof["address"], status=Customer.Status.APPROVED,
+                price_group=PriceGroup.objects.filter(pk=prof.get("price_group") or 0).first(),
+                sales_rep=User.objects.filter(pk=prof.get("sales_rep") or 0).first(),
+                credit_limit=int(prof.get("credit_limit") or 0), approved_at=timezone.now(),
+            )
+            user.role, user.customer, user.is_customer_owner = ctype, customer, True
+            user.can_order = user.can_view_finance = True
+            user.position = None
+        else:
+            user.role = user.position.base_role
+            user.is_staff = user.role == Role.ADMIN
         user.set_password(password) if password else user.set_unusable_password()
         user.save()
-        user.regions.set(regions)
+        if regions:
+            user.regions.set(regions)
         return user
 
     def update(self, instance, data):
         regions = data.pop("regions", None)
         password = data.pop("password", "")
+        data.pop("customer_type", None)
+        data.pop("customer_profile", None)
         for k, v in data.items():
             setattr(instance, k, v)
+        if instance.role not in CUSTOMER_ROLES and instance.position_id:
+            instance.role = instance.position.base_role
+            instance.is_staff = instance.role == Role.ADMIN
         if password:
             instance.set_password(password)
         instance.save()

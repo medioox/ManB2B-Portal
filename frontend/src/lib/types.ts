@@ -1,10 +1,10 @@
-export type Role = "admin" | "sales_manager" | "sales_rep" | "distributor" | "store" | "organization" | "lab";
-export const STAFF: Role[] = ["admin", "sales_manager", "sales_rep"];
+export type Role = "admin" | "sales_manager" | "sales_rep" | "staff" | "distributor" | "store" | "organization" | "lab";
+export const STAFF: Role[] = ["admin", "sales_manager", "sales_rep", "staff"];
 export const CUSTOMER: Role[] = ["distributor", "store", "organization", "lab"];
 export const MANAGERS: Role[] = ["admin", "sales_manager"];
 
 export const ROLE_LABEL: Record<Role, string> = {
-  admin: "ادمین کل", sales_manager: "مدیر فروش", sales_rep: "کارشناس فروش", distributor: "نماینده / پخش‌کننده",
+  admin: "ادمین کل", sales_manager: "مدیر فروش", sales_rep: "کارشناس فروش", staff: "کارمند", distributor: "نماینده / پخش‌کننده",
   store: "فروشگاه", organization: "مشتری سازمانی", lab: "آزمایشگاه",
 };
 
@@ -22,6 +22,7 @@ export type User = {
   id: number; username: string; phone: string | null; first_name: string; last_name: string; full_name: string;
   role: Role; role_display: string; is_customer_owner: boolean; can_order: boolean; can_view_finance: boolean;
   job_title: string; customer: Customer | null; region_ids: number[];
+  permissions: string[]; scope: "all" | "region" | null; position: number | null; position_name: string | null;
 };
 
 export type Product = {

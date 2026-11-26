@@ -12,6 +12,28 @@ class Manager(UserManager):
         return super().create_superuser(username, email, password, **extra)
 
 
+class Position(TimeStampedModel):
+    """سمت سازمانی: which panel sections a staff user sees and which customers' data."""
+
+    class Scope(models.TextChoices):
+        ALL = "all", "همه‌ی مشتری‌ها و سفارش‌ها"
+        REGION = "region", "فقط استان‌ها و مشتری‌های خودش"
+
+    name = models.CharField(max_length=100, unique=True)
+    description = models.CharField(max_length=300, blank=True)
+    permissions = models.JSONField(default=list, blank=True)
+    scope = models.CharField(max_length=10, choices=Scope.choices, default=Scope.REGION)
+    base_role = models.CharField(max_length=20, choices=Role.choices, default=Role.STAFF,
+                                 help_text="نقش پایه؛ برای سمت‌های سفارشی «کارمند» است")
+    is_system = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["-is_system", "id"]
+
+    def __str__(self):
+        return self.name
+
+
 class User(AbstractUser):
     """Login identity. Customers log in with phone + OTP; staff may also use a password."""
 
@@ -27,6 +49,7 @@ class User(AbstractUser):
     job_title = models.CharField(max_length=100, blank=True)
     # staff: provinces a sales rep is responsible for
     regions = models.ManyToManyField("network.Province", blank=True, related_name="sales_reps")
+    position = models.ForeignKey(Position, null=True, blank=True, on_delete=models.PROTECT, related_name="users")
 
     objects = Manager()
 
@@ -70,7 +93,6 @@ class Customer(TimeStampedModel):
     )
     sales_rep = models.ForeignKey(
         User, null=True, blank=True, on_delete=models.SET_NULL, related_name="assigned_customers",
-        limit_choices_to={"role": Role.SALES_REP},
     )
     credit_limit = models.DecimalField(max_digits=16, decimal_places=0, default=0)
     block_on_credit = models.BooleanField(default=True, help_text="جلوگیری از سفارش وقتی اعتبار تمام شده")

@@ -4,7 +4,7 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 
-from apps.core.permissions import IsManagerOrReadOnly
+from apps.core.permissions import ReadOrPerm
 
 from .models import Campaign, MarketingAsset
 from .serializers import CampaignSerializer, MarketingAssetSerializer
@@ -12,7 +12,7 @@ from .serializers import CampaignSerializer, MarketingAssetSerializer
 
 class CampaignViewSet(viewsets.ModelViewSet):
     serializer_class = CampaignSerializer
-    permission_classes = [IsManagerOrReadOnly]
+    permission_classes = [ReadOrPerm("marketing")]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     pagination_class = None
 
@@ -22,7 +22,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
 
 class MarketingAssetViewSet(viewsets.ModelViewSet):
     serializer_class = MarketingAssetSerializer
-    permission_classes = [IsManagerOrReadOnly]
+    permission_classes = [ReadOrPerm("marketing")]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     filterset_fields = ["kind", "campaign"]
     search_fields = ["title"]

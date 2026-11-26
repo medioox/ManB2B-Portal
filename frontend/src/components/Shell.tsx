@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { canFinance, canOrder, isManager, isStaff, useAuth } from "@/lib/auth";
+import { can, canFinance, canOrder, isStaff, staffHome, useAuth } from "@/lib/auth";
 import { useCart } from "@/lib/cart";
 import { ago, num } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
@@ -15,31 +15,33 @@ type Group = { title?: string; items: Item[] };
 
 function menuFor(u: User, counts: Record<string, number>): Group[] {
   if (isStaff(u)) {
-    const m = isManager(u);
-    return [
-      { items: [{ to: "/admin", label: "داشبورد مدیریتی", icon: "chart" }] },
+    const c = (...k: string[]) => can(u, ...k);
+    const groups: Group[] = [
+      { items: [{ to: "/admin", label: "داشبورد مدیریتی", icon: "chart", show: () => c("dashboard") }] },
       { title: "فروش", items: [
-        { to: "/admin/customers", label: "مشتری‌ها و تأیید", icon: "users", badge: counts.pending },
-        { to: "/admin/orders", label: "صف سفارش‌ها", icon: "truck", badge: counts.orders },
-        { to: "/admin/finance", label: "مالی، چک و اعتبار", icon: "wallet" },
-        { to: "/admin/targets", label: "اهداف و پاداش", icon: "award" },
-        { to: "/admin/network", label: "شبکه‌ی فروش", icon: "map" },
+        { to: "/admin/customers", label: "مشتری‌ها و تأیید", icon: "users", badge: counts.pending, show: () => c("customers", "customers_manage") },
+        { to: "/admin/orders", label: "صف سفارش‌ها", icon: "truck", badge: counts.orders, show: () => c("orders", "orders_manage") },
+        { to: "/admin/finance", label: "مالی، چک و اعتبار", icon: "wallet", show: () => c("finance", "finance_manage") },
+        { to: "/admin/targets", label: "اهداف و پاداش", icon: "award", show: () => c("targets") },
+        { to: "/admin/network", label: "شبکه‌ی فروش", icon: "map", show: () => c("network") },
       ] },
       { title: "کالا و محتوا", items: [
-        ...(m ? [{ to: "/admin/products", label: "محصولات", icon: "box" }, { to: "/admin/pricing", label: "قیمت‌گذاری", icon: "tag" }] : []),
+        { to: "/admin/products", label: "محصولات", icon: "box", show: () => c("products") },
+        { to: "/admin/pricing", label: "قیمت‌گذاری", icon: "tag", show: () => c("pricing") },
         { to: "/admin/marketing", label: "کیت بازاریابی", icon: "folder" },
         { to: "/admin/training", label: "آموزش", icon: "book" },
-        ...(m ? [{ to: "/admin/announcements", label: "اطلاعیه‌ها", icon: "megaphone" }] : []),
+        { to: "/admin/announcements", label: "اطلاعیه‌ها", icon: "megaphone", show: () => c("announcements") },
       ] },
       { title: "پشتیبانی", items: [
-        { to: "/admin/returns", label: "مرجوعی و شکایت", icon: "rotate" },
-        { to: "/admin/tickets", label: "تیکت‌ها", icon: "message" },
+        { to: "/admin/returns", label: "مرجوعی و شکایت", icon: "rotate", show: () => c("support") },
+        { to: "/admin/tickets", label: "تیکت‌ها", icon: "message", show: () => c("support") },
       ] },
-      ...(m ? [{ title: "سیستم", items: [
-        { to: "/admin/integrations", label: "اتصال حسابداری", icon: "sync" },
-        ...(u.role === "admin" ? [{ to: "/admin/staff", label: "کاربران سازمان", icon: "shield" }] : []),
-      ] }] : []),
+      { title: "سیستم", items: [
+        { to: "/admin/integrations", label: "اتصال حسابداری", icon: "sync", show: () => c("integrations") },
+        { to: "/admin/users", label: "کاربران و سمت‌ها", icon: "shield", show: () => c("users") },
+      ] },
     ];
+    return groups.map((g) => ({ ...g, items: g.items.filter((i) => !i.show || i.show(u)) })).filter((g) => g.items.length);
   }
   const lab = u.role === "lab";
   return [
@@ -130,8 +132,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const nav = useNav();
   const [drawer, setDrawer] = useState(false);
   const staff = isStaff(user);
-  const { data: cstats } = useApi<Record<string, number>>(staff ? "/customers/stats/" : null);
-  const { data: ostats } = useApi<Record<string, number>>(staff ? "/orders/stats/" : null);
+  const { data: cstats } = useApi<Record<string, number>>(staff && can(user, "customers", "customers_manage") ? "/customers/stats/" : null);
+  const { data: ostats } = useApi<Record<string, number>>(staff && can(user, "orders", "orders_manage") ? "/orders/stats/" : null);
   useEffect(() => setDrawer(false), [nav.path]);
   if (!user) return null;
   const groups = menuFor(user, { pending: cstats?.pending ?? 0, orders: ostats?.submitted ?? 0, cart: cart?.items.length ?? 0 });
@@ -162,7 +164,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex">
       <aside className="hidden lg:flex w-64 shrink-0 flex-col bg-cream-100 border-l border-cream-300 sticky top-0 h-screen">
-        <div className="px-5 h-16 flex items-center border-b border-cream-300"><Link to={staff ? "/admin" : "/dashboard"}><Logo /></Link></div>
+        <div className="px-5 h-16 flex items-center border-b border-cream-300"><Link to={staff ? staffHome(user) : "/dashboard"}><Logo /></Link></div>
         <div className="flex-1 overflow-y-auto">{sidebar}</div>
       </aside>
       {drawer && (

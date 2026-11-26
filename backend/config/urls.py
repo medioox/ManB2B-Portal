@@ -23,7 +23,8 @@ router.register("announcements", core.AnnouncementViewSet, basename="announcemen
 router.register("notifications", core.NotificationViewSet, basename="notification")
 router.register("customers", acc.CustomerViewSet, basename="customer")
 router.register("sub-users", acc.SubUserViewSet, basename="subuser")
-router.register("staff", acc.StaffUserViewSet, basename="staff")
+router.register("users", acc.UserAdminViewSet, basename="useradmin")
+router.register("positions", acc.PositionViewSet, basename="position")
 router.register("provinces", net.ProvinceViewSet, basename="province")
 router.register("coverage", net.CoverageViewSet, basename="coverage")
 router.register("agency-applications", net.AgencyApplicationViewSet, basename="agency")
@@ -56,6 +57,7 @@ api = [
     path("auth/refresh/", TokenRefreshView.as_view()),
     path("auth/me/", acc.MeView.as_view()),
     path("auth/me/documents/", acc.MyDocumentsView.as_view()),
+    path("staff/", acc.StaffListView.as_view()),
     path("cart/", ord_.CartView.as_view()),
     path("checkout/", ord_.CheckoutView.as_view()),
     path("product-picker/", ord_.ProductPickerView.as_view()),

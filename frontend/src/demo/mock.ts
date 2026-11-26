@@ -15,7 +15,7 @@ let nextId = 100000;
 const nid = () => ++nextId;
 const nowIso = () => new Date().toISOString();
 const today = () => new Date().toISOString().slice(0, 10);
-const STAFF = ["admin", "sales_manager", "sales_rep"];
+const STAFF = ["admin", "sales_manager", "sales_rep", "staff"];
 const CUSTOMER = ["distributor", "store", "organization", "lab"];
 const OTP: Record<string, string> = {};
 const carts: Record<number, Record<number, number>> = {};
@@ -80,15 +80,15 @@ function notifyStaff(cust: any, title: string, body = "", link = "") {
 
 /* ---------------------------------------------------------------- scoping */
 function visibleCustomers(u: any): any[] {
-  if (u.role === "admin" || u.role === "sales_manager") return D.customers;
-  if (u.role === "sales_rep") {
+  if (STAFF.includes(u.role) && u.scope === "all") return D.customers;
+  if (STAFF.includes(u.role)) {
     const provNames = D.provinces.filter((p: any) => u.region_ids.includes(p.id)).map((p: any) => p.name);
     return D.customers.filter((c: any) => c.sales_rep === u.id || provNames.includes(c.province_name));
   }
   return D.customers.filter((c: any) => c.id === u.customer_id);
 }
 function scoped(list: any[], u: any): any[] {
-  if (u.role === "admin" || u.role === "sales_manager") return list;
+  if (STAFF.includes(u.role) && u.scope === "all") return list;
   const ids = new Set(visibleCustomers(u).map((c) => c.id));
   return list.filter((x) => ids.has(x.customer));
 }
@@ -345,10 +345,84 @@ on("GET", "/sub-users", ({ u }) => u.is_customer_owner ? ok(D.users.filter((x: a
 on("POST", "/sub-users", ({ u, b }) => { if (D.users.some((x: any) => x.phone === b.phone)) return err(400, "این شماره قبلاً در سامانه ثبت شده است.", { phone: ["این شماره قبلاً در سامانه ثبت شده است."] }); const n = { id: nid(), username: b.phone, ...b, role: u.role, role_display: u.role_display, customer_id: u.customer_id, is_customer_owner: false, region_ids: [], is_active: true }; D.users.push(n); return ok(n, 201); });
 on("PATCH", "/sub-users/:id", ({ m, b }) => { const x = userById(+m[1]); Object.assign(x, b); return ok(x); });
 on("DELETE", "/sub-users/:id", ({ m }) => { userById(+m[1]).is_active = false; return ok(null, 204); });
-const staffOut = (x: any) => ({ ...x, password: undefined, regions: x.region_ids, customers_count: D.customers.filter((c: any) => c.sales_rep === x.id).length });
-on("GET", "/staff", ({ q }) => ok(D.users.filter((x: any) => STAFF.includes(x.role) && (!q.get("role") || x.role === q.get("role"))).map(staffOut)));
-on("POST", "/staff", ({ b }) => { const labels: any = { admin: "ادمین کل", sales_manager: "مدیر فروش", sales_rep: "کارشناس فروش" }; const x = { id: nid(), ...b, region_ids: b.regions || [], role_display: labels[b.role], is_customer_owner: false, can_order: false, can_view_finance: false, job_title: "", customer_id: null, is_active: true }; D.users.push(x); return ok(staffOut(x), 201); });
-on("PATCH", "/staff/:id", ({ m, b }) => { const x = userById(+m[1]); Object.assign(x, b, b.regions ? { region_ids: b.regions } : {}); if (!b.password) x.password = x.password; return ok(staffOut(x)); });
+on("GET", "/staff", ({ q }) => ok(D.users.filter((x: any) => STAFF.includes(x.role) && x.is_active && (!q.get("assignable") || (x.role !== "admin" && x.scope === "region")))
+  .map((x: any) => ({ id: x.id, first_name: x.first_name, last_name: x.last_name, role: x.role, position_name: x.position_name ?? x.role_display }))));
+const posOut = (p: any) => ({ ...p, users_count: D.users.filter((u: any) => u.position === p.id).length, scope_display: p.scope === "all" ? "همه‌ی مشتری‌ها و سفارش‌ها" : "فقط استان‌ها و مشتری‌های خودش" });
+function applyPosition(u: any, pos: any) {
+  u.position = pos.id; u.position_name = pos.name; u.role = pos.base_role; u.role_display = pos.name;
+  u.permissions = pos.base_role === "admin" ? D.sections.map((x: any) => x.key) : [...pos.permissions]; u.scope = pos.base_role === "admin" ? "all" : pos.scope;
+}
+on("GET", "/positions/sections", () => ok(D.sections));
+on("GET", "/positions", () => ok(D.positions.map(posOut)));
+on("POST", "/positions", ({ b }) => {
+  if (!b.name) return err(400, "نام سمت الزامی است.");
+  if (D.positions.some((p: any) => p.name === b.name)) return err(400, "سمتی با این نام وجود دارد.");
+  const p = { id: nid(), name: b.name, description: b.description || "", permissions: b.permissions || [], scope: b.scope || "region", base_role: "staff", is_system: false };
+  D.positions.push(p); return ok(posOut(p), 201);
+});
+on("PATCH", "/positions/:id", ({ m, b }) => {
+  const p = D.positions.find((x: any) => x.id === +m[1]);
+  if (p.base_role === "admin") return err(400, "سمت «ادمین کل» همیشه دسترسی کامل دارد و قابل ویرایش نیست.");
+  Object.assign(p, { name: b.name ?? p.name, description: b.description ?? p.description, permissions: b.permissions ?? p.permissions, scope: b.scope ?? p.scope });
+  D.users.filter((u: any) => u.position === p.id).forEach((u: any) => applyPosition(u, p));
+  return ok(posOut(p));
+});
+on("DELETE", "/positions/:id", ({ m }) => {
+  const p = D.positions.find((x: any) => x.id === +m[1]);
+  if (p.is_system) return err(400, "سمت‌های پیش‌فرض قابل حذف نیستند.");
+  if (D.users.some((u: any) => u.position === p.id)) return err(400, "این سمت کاربر دارد؛ ابتدا سمت کاربرانش را تغییر دهید.");
+  D.positions = D.positions.filter((x: any) => x.id !== p.id); return ok(null, 204);
+});
+const userAdminOut = (x: any) => ({ ...x, password: undefined, regions: x.region_ids, kind: CUSTOMER.includes(x.role) ? "customer" : "staff",
+  business_name: x.customer_id ? custById(x.customer_id)?.business_name : null, customer: x.customer_id, customers_count: D.customers.filter((c: any) => c.sales_rep === x.id).length });
+on("GET", "/users", ({ q }) => {
+  const s = q.get("search") || "";
+  const l = D.users.filter((x: any) => (q.get("kind") !== "staff" || STAFF.includes(x.role)) && (q.get("kind") !== "customer" || CUSTOMER.includes(x.role))
+    && (!q.get("position") || String(x.position) === q.get("position"))
+    && (has(x.first_name, s) || has(x.last_name, s) || has(x.phone, s) || has(x.username, s) || has(x.customer_id ? custById(x.customer_id)?.business_name : "", s)))
+    .sort((a: any, b: any) => String(b.date_joined || "").localeCompare(String(a.date_joined || "")));
+  const pg = page(l, q); return ok({ ...pg, results: pg.results.map(userAdminOut) });
+});
+on("POST", "/users", ({ b }) => {
+  const phone = b.phone ? String(b.phone).replace(/\D/g, "") : null;
+  if (phone && D.users.some((x: any) => x.phone === phone)) return err(400, "این شماره قبلاً در سامانه ثبت شده است.", { phone: ["این شماره قبلاً در سامانه ثبت شده است."] });
+  const username = b.username || phone;
+  if (!username) return err(400, "نام کاربری یا موبایل لازم است.", { username: ["نام کاربری یا موبایل لازم است."] });
+  if (D.users.some((x: any) => x.username === username)) return err(400, "این نام کاربری قبلاً استفاده شده است.", { username: ["این نام کاربری قبلاً استفاده شده است."] });
+  const u: any = { id: nid(), username, phone, first_name: b.first_name || "", last_name: b.last_name || "", job_title: b.job_title || "", is_active: true,
+    is_customer_owner: false, can_order: false, can_view_finance: false, customer_id: null, region_ids: b.regions || [], password: b.password || null, last_login: null, date_joined: nowIso(), permissions: [], scope: null, position: null, position_name: null };
+  if (b.customer_type) {
+    const pr = b.customer_profile || {};
+    if (!phone) return err(400, "مشتری با موبایل وارد می‌شود؛ شماره را وارد کنید.", { phone: ["شماره را وارد کنید."] });
+    if (!pr.business_name || !pr.city || !pr.address) return err(400, "نام کسب‌وکار، شهر و آدرس الزامی است.");
+    const city = D.provinces.flatMap((p: any) => p.cities.map((c: any) => ({ ...c, pn: p.name }))).find((c: any) => String(c.id) === String(pr.city));
+    const types: any = { distributor: "نماینده / پخش‌کننده", store: "فروشگاه", organization: "مشتری سازمانی", lab: "آزمایشگاه" };
+    const rep = pr.sales_rep ? userById(+pr.sales_rep) : null;
+    const c = { id: nid(), type: b.customer_type, type_display: types[b.customer_type], business_name: pr.business_name, owner_name: `${u.first_name} ${u.last_name}`.trim(), phone,
+      economic_code: pr.economic_code || "", national_id: "", license_number: "", city: city.id, city_name: city.name, province_name: city.pn, address: pr.address, postal_code: "",
+      status: "approved", status_display: "تأیید شده", rejection_reason: "", price_group: pr.price_group ? +pr.price_group : null,
+      price_group_name: D.price_groups.find((g: any) => g.id === +pr.price_group)?.name ?? null, sales_rep: rep?.id ?? null, sales_rep_name: fullName(rep),
+      credit_limit: Number(pr.credit_limit) || 0, block_on_credit: true, accounting_code: "", approved_at: nowIso(), created_at: nowIso(), documents: [] };
+    D.customers.unshift(c);
+    Object.assign(u, { role: b.customer_type, role_display: types[b.customer_type], customer_id: c.id, is_customer_owner: true, can_order: true, can_view_finance: true, password: null });
+  } else {
+    const pos = D.positions.find((p: any) => p.id === +b.position);
+    if (!pos) return err(400, "سمت کاربر را انتخاب کنید.", { position: ["سمت کاربر را انتخاب کنید."] });
+    applyPosition(u, pos);
+  }
+  D.users.push(u);
+  return ok(userAdminOut(u), 201);
+});
+on("PATCH", "/users/:id", ({ u: me, m, b }) => {
+  const x = userById(+m[1]);
+  if (x.id === me.id && b.is_active === false) return err(400, "نمی‌توانید حساب خودتان را غیرفعال کنید.");
+  ["first_name", "last_name", "job_title", "is_active", "username"].forEach((k) => b[k] !== undefined && (x[k] = b[k]));
+  if (b.phone !== undefined) x.phone = b.phone;
+  if (b.password) x.password = b.password;
+  if (b.regions) x.region_ids = b.regions;
+  if (b.position) applyPosition(x, D.positions.find((p: any) => p.id === +b.position));
+  return ok(userAdminOut(x));
+});
 
 /* ---- network ---- */
 on("GET", "/coverage", () => {
@@ -650,6 +724,31 @@ on("POST", "/integrations/run", ({ b }) => {
   return ok({ queued: true });
 });
 
+/** Section permission required from staff users (mirrors the Django permission classes). */
+const GATES: [string, RegExp, string[]][] = [
+  ["*", /^\/(positions|users)/, ["users"]],
+  ["POST", /^\/customers\/\d+\/(approve|reject|suspend)/, ["customers_manage"]],
+  ["PATCH", /^\/customers\//, ["customers_manage"]],
+  ["GET", /^\/customers/, ["customers", "customers_manage", "finance"]],
+  ["*", /^\/reports/, ["dashboard"]],
+  ["*", /^\/(coverage|agency-applications)/, ["network"]],
+  ["*", /^\/(rewards\/overview|targets)/, ["targets"]],
+  ["*", /^\/integrations/, ["integrations"]],
+  ["POST", /^\/orders\/\d+\/(set_status|edit_items)/, ["orders_manage"]],
+  ["*", /^\/orders/, ["orders", "orders_manage"]],
+  ["POST", /^\/finance\/cheques\/\d+\/set_status/, ["finance_manage"]],
+  ["*", /^\/finance/, ["finance", "finance_manage", "customers_manage"]],
+  ["*", /^\/price-groups/, ["pricing"]],
+  ["POST", /^\/volume-discounts/, ["pricing"]],
+  ["DELETE", /^\/volume-discounts/, ["pricing"]],
+  ["POST", /^\/(products|categories)/, ["products"]],
+  ["PATCH", /^\/(products|categories)/, ["products"]],
+  ["*", /^\/(returns|tickets)/, ["support"]],
+  ["POST", /^\/(announcements)/, ["announcements"]],
+  ["POST", /^\/(marketing-assets|campaigns)/, ["marketing"]],
+  ["POST", /^\/(courses|lessons|quiz-questions)/, ["training"]],
+];
+
 /* ================================================================ entry */
 export async function initMock(url: string) {
   const res = await fetch(url);
@@ -680,6 +779,10 @@ export async function handle(method: string, fullPath: string, body?: unknown): 
     const m = path.match(re);
     if (!m) continue;
     if (!pub && !u) return err(401, "ابتدا وارد شوید.");
+    if (u && STAFF.includes(u.role) && u.role !== "admin") {
+      const need = GATES.find(([mm, re2]) => (mm === "*" || mm === method) && re2.test(path));
+      if (need && !need[2].some((k) => u.permissions.includes(k))) return err(403, "سمت شما به این بخش دسترسی ندارد.");
+    }
     try {
       return h({ u, q, b, m });
     } catch (e) {

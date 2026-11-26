@@ -12,15 +12,16 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.core.permissions import IsAdmin, IsManager, IsStaffRole
+from apps.core.permissions import IsStaffRole, Perm
 from apps.core.services import notify, notify_customer
 
-from .models import Customer, CustomerDocument, User
+from .models import Customer, CustomerDocument, Position, User
 from .otp import check_code, is_valid_phone, issue_code, make_registration_token, normalize_phone
-from .roles import STAFF_ROLES, Role
+from .roles import CUSTOMER_ROLES, STAFF_ROLES, Role
 from .scoping import customers_for
+from .perms import SCOPE_REGION, SECTIONS, has_perm, users_with_perm
 from .serializers import (
-    CustomerDocumentSerializer, CustomerSerializer, RegisterSerializer, StaffUserSerializer,
+    AdminUserSerializer, CustomerDocumentSerializer, CustomerSerializer, PositionSerializer, RegisterSerializer,
     SubUserSerializer, UserSerializer,
 )
 
@@ -96,7 +97,7 @@ class RegisterView(APIView):
         s = RegisterSerializer(data=payload)
         s.is_valid(raise_exception=True)
         user = s.save()
-        for manager in User.objects.filter(role__in=[Role.ADMIN, Role.SALES_MANAGER], is_active=True):
+        for manager in users_with_perm("customers_manage"):
             notify(manager, "درخواست عضویت جدید", f"{user.customer.business_name} - {user.customer.city.name}",
                    link="/admin/customers/review?id=%d" % user.customer_id)
         return Response({**tokens_for(user), "user": UserSerializer(user).data}, status=status.HTTP_201_CREATED)
@@ -120,7 +121,7 @@ class CustomerViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.U
     """Staff-side customer management + approval queue."""
 
     serializer_class = CustomerSerializer
-    permission_classes = [IsStaffRole]
+    permission_classes = [Perm("customers", "customers_manage", "finance")]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["status", "type", "city", "city__province", "sales_rep", "price_group"]
     search_fields = ["business_name", "owner_name", "phone", "economic_code"]
@@ -130,8 +131,8 @@ class CustomerViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.U
         return customers_for(self.request.user).prefetch_related("documents")
 
     def perform_update(self, serializer):
-        if self.request.user.role == Role.SALES_REP:
-            raise PermissionDenied("کارشناس فروش اجازه‌ی ویرایش مشتری را ندارد.")
+        if not has_perm(self.request.user, "customers_manage"):
+            raise PermissionDenied("سمت شما اجازه‌ی ویرایش مشتری را ندارد.")
         serializer.save()
 
     @action(detail=False)
@@ -139,7 +140,7 @@ class CustomerViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.U
         qs = self.get_queryset()
         return Response({row["status"]: row["n"] for row in qs.values("status").annotate(n=Count("id"))})
 
-    @action(detail=True, methods=["post"], permission_classes=[IsManager])
+    @action(detail=True, methods=["post"], permission_classes=[Perm("customers_manage")])
     def approve(self, request, pk=None):
         c = self.get_object()
         s = self.get_serializer(c, data=request.data, partial=True)
@@ -151,7 +152,7 @@ class CustomerViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.U
             notify(c.sales_rep, "مشتری جدید به شما سپرده شد", c.business_name, link=f"/admin/customers/review?id={c.id}")
         return Response(self.get_serializer(c).data)
 
-    @action(detail=True, methods=["post"], permission_classes=[IsManager])
+    @action(detail=True, methods=["post"], permission_classes=[Perm("customers_manage")])
     def reject(self, request, pk=None):
         c = self.get_object()
         reason = request.data.get("reason", "").strip()
@@ -163,7 +164,7 @@ class CustomerViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.U
         notify_customer(c, "درخواست عضویت شما رد شد", reason, link="/pending", sms=True)
         return Response(self.get_serializer(c).data)
 
-    @action(detail=True, methods=["post"], permission_classes=[IsManager])
+    @action(detail=True, methods=["post"], permission_classes=[Perm("customers_manage")])
     def suspend(self, request, pk=None):
         c = self.get_object()
         c.status = Customer.Status.SUSPENDED
@@ -206,17 +207,63 @@ class SubUserViewSet(viewsets.ModelViewSet):
         instance.save()
 
 
-class StaffUserViewSet(viewsets.ModelViewSet):
-    serializer_class = StaffUserSerializer
-    permission_classes = [IsAdmin]
+class StaffListView(APIView):
+    """Light list of staff for dropdowns (e.g. choosing a customer's sales rep)."""
+
+    permission_classes = [IsStaffRole]
+
+    def get(self, request):
+        qs = User.objects.exclude(role__in=CUSTOMER_ROLES).filter(is_active=True).select_related("position")
+        if request.query_params.get("assignable"):
+            qs = [u for u in qs if u.role != Role.ADMIN and (u.position.scope if u.position_id else "region") == SCOPE_REGION]
+        return Response([{"id": u.id, "first_name": u.first_name, "last_name": u.last_name, "role": u.role,
+                          "position_name": u.position.name if u.position_id else u.get_role_display()} for u in qs])
+
+
+class PositionViewSet(viewsets.ModelViewSet):
+    serializer_class = PositionSerializer
+    permission_classes = [Perm("users")]
     pagination_class = None
 
-    def get_permissions(self):
-        if self.action == "list":
-            return [IsManager()]
-        return super().get_permissions()
+    def get_queryset(self):
+        return Position.objects.annotate(users_count=Count("users")).order_by("-is_system", "id")
+
+    def perform_destroy(self, instance):
+        if instance.is_system:
+            raise ValidationError("سمت‌های پیش‌فرض قابل حذف نیستند.")
+        if instance.users.exists():
+            raise ValidationError("این سمت کاربر دارد؛ ابتدا سمت کاربرانش را تغییر دهید.")
+        instance.delete()
+
+    @action(detail=False)
+    def sections(self, request):
+        return Response([{"key": k, "label": l} for k, l in SECTIONS])
+
+
+class UserAdminViewSet(viewsets.ModelViewSet):
+    """Admin: create any user — staff with a position, or a ready-to-use customer account."""
+
+    serializer_class = AdminUserSerializer
+    permission_classes = [Perm("users")]
+    http_method_names = ["get", "post", "patch", "head", "options"]
+    search_fields = ["username", "phone", "first_name", "last_name", "customer__business_name"]
 
     def get_queryset(self):
-        qs = User.objects.filter(role__in=STAFF_ROLES).annotate(customers_count=Count("assigned_customers"))
-        role = self.request.query_params.get("role")
-        return qs.filter(role=role) if role else qs.order_by("role", "id")
+        qs = User.objects.select_related("position", "customer").prefetch_related("regions").annotate(
+            customers_count=Count("assigned_customers")).order_by("-date_joined")
+        p = self.request.query_params
+        if p.get("kind") == "staff":
+            qs = qs.exclude(role__in=CUSTOMER_ROLES)
+        elif p.get("kind") == "customer":
+            qs = qs.filter(role__in=CUSTOMER_ROLES)
+        if p.get("position"):
+            qs = qs.filter(position_id=p["position"])
+        if p.get("role"):
+            qs = qs.filter(role=p["role"])
+        return qs
+
+    def perform_update(self, serializer):
+        u = serializer.instance
+        if u == self.request.user and serializer.validated_data.get("is_active") is False:
+            raise ValidationError("نمی‌توانید حساب خودتان را غیرفعال کنید.")
+        serializer.save()

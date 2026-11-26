@@ -118,3 +118,53 @@ class FlowTests(TestCase):
     def test_health(self):
         self.assertEqual(self.c.get("/api/v1/health/live/").status_code, 200)
         self.assertEqual(self.c.get("/api/v1/health/ready/").status_code, 200)
+
+
+@override_settings(CELERY_TASK_ALWAYS_EAGER=True,
+                   CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})
+class PositionTests(TestCase):
+    def setUp(self):
+        from apps.accounts.models import Position
+
+        cache.clear()
+        prov = Province.objects.create(name="تهران")
+        self.city = City.objects.create(province=prov, name="تهران")
+        self.admin = User.objects.create(username="adm", role="admin",
+                                         position=Position.objects.get(base_role="admin"))
+        self.c = APIClient()
+        self.c.force_authenticate(self.admin)
+
+    def test_custom_position_controls_panel(self):
+        r = self.c.post("/api/v1/positions/", {"name": "انباردار", "permissions": ["orders", "orders_manage"],
+                                               "scope": "all"}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        r = self.c.post("/api/v1/users/", {"username": "wh", "phone": "09127777777", "first_name": "a",
+                                           "position": r.data["id"], "password": "x1234567"}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        wh = User.objects.get(username="wh")
+        self.assertEqual(wh.role, "staff")
+        self.c.force_authenticate(wh)
+        me = self.c.get("/api/v1/auth/me/").data
+        self.assertEqual(me["permissions"], ["orders", "orders_manage"])
+        self.assertEqual(me["role_display"], "انباردار")
+        self.assertEqual(self.c.get("/api/v1/orders/").status_code, 200)
+        self.assertEqual(self.c.get("/api/v1/customers/").status_code, 403)
+        self.assertEqual(self.c.get("/api/v1/reports/dashboard/").status_code, 403)
+        self.assertEqual(self.c.post("/api/v1/positions/", {"name": "x"}, format="json").status_code, 403)
+
+    def test_admin_creates_ready_customer_account(self):
+        r = self.c.post("/api/v1/users/", {
+            "phone": "09128888888", "first_name": "b", "last_name": "c", "customer_type": "store",
+            "customer_profile": {"business_name": "سوپر تست", "city": self.city.id, "address": "خیابان"},
+        }, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        u = User.objects.get(phone="09128888888")
+        self.assertEqual(u.role, "store")
+        self.assertEqual(u.customer.status, "approved")
+
+    def test_system_admin_position_is_locked(self):
+        from apps.accounts.models import Position
+
+        pid = Position.objects.get(base_role="admin").id
+        r = self.c.patch(f"/api/v1/positions/{pid}/", {"permissions": []}, format="json")
+        self.assertEqual(r.status_code, 400)

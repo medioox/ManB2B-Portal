@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import type { Role } from "@/lib/types";
-import { CUSTOMER, MANAGERS, STAFF } from "@/lib/types";
+import { CUSTOMER, STAFF } from "@/lib/types";
 import Login from "@/views/auth/Login";
 import Register from "@/views/auth/Register";
 import Pending from "@/views/auth/Pending";
@@ -25,7 +25,8 @@ import Pricing from "@/views/admin/Pricing";
 import FinanceAdmin from "@/views/admin/FinanceAdmin";
 import Targets from "@/views/admin/Targets";
 import Network from "@/views/admin/Network";
-import { Announcements, Integrations, Staff, TrainingAdmin } from "@/views/admin/Misc";
+import { Announcements, Integrations, TrainingAdmin } from "@/views/admin/Misc";
+import Users from "@/views/admin/Users";
 
 export type RouteDef = {
   view: React.ComponentType;
@@ -37,6 +38,8 @@ export type RouteDef = {
   approved?: boolean;
   /** extra permission check for sub-users */
   perm?: "finance" | "order" | "owner";
+  /** staff: any of these position permissions */
+  staff?: string[];
 };
 
 const C = CUSTOMER;
@@ -71,21 +74,22 @@ export const ROUTES: Record<string, RouteDef> = {
   "/support/tickets/new": { view: NewTicket, roles: C, approved: true },
   "/support/tickets/detail": { view: TicketDetail, roles: C, approved: true },
 
-  "/admin": { view: AdminDashboard, roles: S },
-  "/admin/customers": { view: Customers, roles: S },
-  "/admin/customers/review": { view: CustomerReview, roles: S },
-  "/admin/orders": { view: AdminOrders, roles: S },
-  "/admin/orders/detail": { view: AdminOrderDetail, roles: S },
-  "/admin/products": { view: AdminProducts, roles: MANAGERS },
-  "/admin/pricing": { view: Pricing, roles: MANAGERS },
-  "/admin/finance": { view: FinanceAdmin, roles: S },
-  "/admin/targets": { view: Targets, roles: S },
-  "/admin/network": { view: Network, roles: S },
+  "/admin": { view: AdminDashboard, roles: S, staff: ["dashboard"] },
+  "/admin/customers": { view: Customers, roles: S, staff: ["customers", "customers_manage"] },
+  "/admin/customers/review": { view: CustomerReview, roles: S, staff: ["customers", "customers_manage"] },
+  "/admin/orders": { view: AdminOrders, roles: S, staff: ["orders", "orders_manage"] },
+  "/admin/orders/detail": { view: AdminOrderDetail, roles: S, staff: ["orders", "orders_manage"] },
+  "/admin/products": { view: AdminProducts, roles: S, staff: ["products"] },
+  "/admin/pricing": { view: Pricing, roles: S, staff: ["pricing"] },
+  "/admin/finance": { view: FinanceAdmin, roles: S, staff: ["finance", "finance_manage"] },
+  "/admin/targets": { view: Targets, roles: S, staff: ["targets"] },
+  "/admin/network": { view: Network, roles: S, staff: ["network"] },
   "/admin/marketing": { view: Marketing, roles: S },
   "/admin/training": { view: TrainingAdmin, roles: S },
-  "/admin/announcements": { view: Announcements, roles: MANAGERS },
-  "/admin/returns": { view: Returns, roles: S },
-  "/admin/tickets": { view: Tickets, roles: S },
-  "/admin/integrations": { view: Integrations, roles: MANAGERS },
-  "/admin/staff": { view: Staff, roles: ["admin"] },
+  "/admin/announcements": { view: Announcements, roles: S, staff: ["announcements"] },
+  "/admin/returns": { view: Returns, roles: S, staff: ["support"] },
+  "/admin/tickets": { view: Tickets, roles: S, staff: ["support"] },
+  "/admin/integrations": { view: Integrations, roles: S, staff: ["integrations"] },
+  "/admin/users": { view: Users, roles: S, staff: ["users"] },
+  "/admin/staff": { view: Users, roles: S, staff: ["users"] },
 };

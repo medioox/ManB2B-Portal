@@ -8,7 +8,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from .models import Announcement, Notification, PushSubscription
-from .permissions import IsManagerOrReadOnly
+from .permissions import ReadOrPerm
 from .serializers import AnnouncementSerializer, NotificationSerializer, PushSubscriptionSerializer
 
 
@@ -42,7 +42,7 @@ def health_ready(request):
 
 class AnnouncementViewSet(viewsets.ModelViewSet):
     serializer_class = AnnouncementSerializer
-    permission_classes = [IsManagerOrReadOnly]
+    permission_classes = [ReadOrPerm("announcements")]
     pagination_class = None
 
     def get_queryset(self):

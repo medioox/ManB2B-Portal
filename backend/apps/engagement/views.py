@@ -9,7 +9,7 @@ from rest_framework.response import Response
 
 from apps.accounts.models import Customer
 from apps.accounts.scoping import customers_for
-from apps.core.permissions import IsManager, IsManagerOrReadOnly
+from apps.core.permissions import Perm, ReadOrPerm
 from apps.orders.models import Order
 from apps.reports.services import COUNTED, JMONTHS
 
@@ -83,8 +83,10 @@ def leaderboard_data(year, month, highlight=None, limit=10):
 @api_view(["GET"])
 def targets_overview(request):
     """Staff: every distributor's progress this month."""
-    if request.user.is_customer:
-        raise PermissionDenied()
+    from apps.accounts.perms import has_perm
+
+    if request.user.is_customer or not has_perm(request.user, "targets"):
+        raise PermissionDenied("سمت شما به این بخش دسترسی ندارد.")
     today = jdatetime.date.today()
     year = int(request.query_params.get("year", today.year))
     month = int(request.query_params.get("month", today.month))
@@ -98,21 +100,21 @@ def targets_overview(request):
 
 class SalesTargetViewSet(viewsets.ModelViewSet):
     serializer_class = SalesTargetSerializer
-    permission_classes = [IsManager]
+    permission_classes = [Perm("targets")]
     filterset_fields = ["customer", "year", "month"]
     queryset = SalesTarget.objects.select_related("customer")
 
 
 class RewardTierViewSet(viewsets.ModelViewSet):
     serializer_class = RewardTierSerializer
-    permission_classes = [IsManagerOrReadOnly]
+    permission_classes = [ReadOrPerm("targets")]
     pagination_class = None
     queryset = RewardTier.objects.all()
 
 
 class CourseViewSet(viewsets.ModelViewSet):
     serializer_class = CourseSerializer
-    permission_classes = [IsManagerOrReadOnly]
+    permission_classes = [ReadOrPerm("training")]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     pagination_class = None
 
@@ -166,7 +168,7 @@ class CourseViewSet(viewsets.ModelViewSet):
 
 class LessonViewSet(viewsets.ModelViewSet):
     serializer_class = LessonSerializer
-    permission_classes = [IsManager]
+    permission_classes = [Perm("training")]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     queryset = Lesson.objects.all()
     filterset_fields = ["course"]
@@ -174,6 +176,6 @@ class LessonViewSet(viewsets.ModelViewSet):
 
 class QuestionViewSet(viewsets.ModelViewSet):
     serializer_class = QuestionAdminSerializer
-    permission_classes = [IsManager]
+    permission_classes = [Perm("training")]
     queryset = QuizQuestion.objects.all()
     filterset_fields = ["course"]

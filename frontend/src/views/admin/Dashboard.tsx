@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Badge, Button, Card, Empty, Loading, PageHeader, Select, Stat, Table, Tabs, useAction } from "@/components/ui";
 import { api } from "@/lib/api";
-import { isManager, useAuth } from "@/lib/auth";
+import { seesAll, useAuth } from "@/lib/auth";
 import { fa, isoDaysAgo, jdate, num, short } from "@/lib/format";
 import { useProvinces } from "@/lib/geo";
 import { useApi } from "@/lib/hooks";
@@ -48,14 +48,14 @@ export default function AdminDashboard() {
   const [ctype, setCtype] = useState("");
   const [rep, setRep] = useState("");
   const { data: provinces } = useProvinces();
-  const { data: reps } = useApi<any[]>(isManager(user) ? "/staff/" : null, { role: "sales_rep" });
+  const { data: reps } = useApi<any[]>(seesAll(user) ? "/staff/" : null, { assignable: 1 });
   const params = { from: isoDaysAgo(+period), granularity: gran, province, customer_type: ctype, sales_rep: rep };
   const { data, loading } = useApi<any>("/reports/dashboard/", params);
   const [tab, setTab] = useState<"city" | "product" | "customer" | "rep">("city");
   const { run, busy } = useAction();
   return (
     <div className="space-y-6">
-      <PageHeader title="داشبورد مدیران" subtitle={user?.role === "sales_rep" ? "فروش مشتری‌ها و منطقه‌ی شما" : "فروش کل شبکه به تفکیک زمان، شهر، محصول و نماینده"}
+      <PageHeader title="داشبورد مدیران" subtitle={!seesAll(user) ? "فروش مشتری‌ها و منطقه‌ی شما" : "فروش کل شبکه به تفکیک زمان، شهر، محصول و نماینده"}
         actions={<Button variant="secondary" icon="download" loading={busy} onClick={() => run(() => api.download("/reports/export/", "man-report.xlsx", params), "فایل اکسل آماده شد")}>خروجی اکسل</Button>} />
       <div className="card p-3 flex flex-wrap gap-2 items-center">
         <Select aria-label="بازه" className="w-36 h-9 text-sm" value={period} onChange={(e) => setPeriod(e.target.value)}>

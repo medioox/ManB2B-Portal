@@ -8,7 +8,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from apps.accounts.roles import Role
-from apps.core.permissions import IsManager, IsManagerOrReadOnly
+from apps.core.permissions import Perm, ReadOrPerm
 
 from .models import Category, PriceGroup, Product, ProductPrice, VolumeDiscount
 from .serializers import (
@@ -38,7 +38,7 @@ def visible_products_for(user):
 
 class CategoryViewSet(viewsets.ModelViewSet):
     serializer_class = CategorySerializer
-    permission_classes = [IsManagerOrReadOnly]
+    permission_classes = [ReadOrPerm("products")]
     pagination_class = None
 
     def get_queryset(self):
@@ -57,7 +57,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
 class ProductViewSet(viewsets.ModelViewSet):
     """Staff: full CRUD. Customers: read-only catalog with their own price."""
 
-    permission_classes = [IsManagerOrReadOnly]
+    permission_classes = [ReadOrPerm("products")]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     filterset_fields = ["category", "is_available", "product_line", "kit_type"]
     search_fields = ["name", "sku", "description"]
@@ -107,7 +107,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 
 class PriceGroupViewSet(viewsets.ModelViewSet):
     serializer_class = PriceGroupSerializer
-    permission_classes = [IsManager]
+    permission_classes = [Perm("pricing")]
     pagination_class = None
 
     def get_queryset(self):
@@ -143,7 +143,7 @@ class PriceGroupViewSet(viewsets.ModelViewSet):
 class VolumeDiscountViewSet(viewsets.ModelViewSet):
     serializer_class = VolumeDiscountSerializer
     queryset = VolumeDiscount.objects.select_related("group")
-    permission_classes = [IsManagerOrReadOnly]
+    permission_classes = [ReadOrPerm("pricing")]
     pagination_class = None
     filterset_fields = ["group"]
 

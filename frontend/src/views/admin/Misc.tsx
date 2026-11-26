@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import { Icon } from "@/components/icons";
 import { Badge, Button, Card, ConfirmButton, Empty, Field, Input, Loading, Modal, PageHeader, Select, StatusChip, Table, Textarea, useAction } from "@/components/ui";
 import { api } from "@/lib/api";
-import { isManager, useAuth } from "@/lib/auth";
+import { can, useAuth } from "@/lib/auth";
 import { ago, fa, jtime, num } from "@/lib/format";
 import { useProvinces } from "@/lib/geo";
 import { useApi } from "@/lib/hooks";
@@ -60,7 +60,7 @@ export function Announcements() {
 /* ---------------- training admin ---------------- */
 export function TrainingAdmin() {
   const { user } = useAuth();
-  const manager = isManager(user);
+  const manager = can(user, "training");
   const { data: courses, reload } = useApi<any[]>("/courses/");
   const [sel, setSel] = useState<any>(null);
   const [nc, setNc] = useState<any>({ title: "", summary: "", audiences: [] });
@@ -139,7 +139,7 @@ export function Integrations() {
   return (
     <>
       <PageHeader title="اتصال به نرم‌افزار حسابداری" subtitle="همگام‌سازی خودکار: کالا، موجودی و قیمت هر ۱۵ دقیقه؛ فاکتور و مانده هر ساعت؛ سفارش بلافاصله پس از تأیید"
-        actions={user?.role === "admin" && <>
+        actions={can(user, "integrations") && <>
           <Button variant="secondary" icon="sync" loading={busy} onClick={async () => { await run(() => api.post("/integrations/run/", { kind: "products" }), "همگام‌سازی کالاها در صف قرار گرفت"); setTimeout(reload, 1500); }}>همگام‌سازی کالا و موجودی</Button>
           <Button variant="secondary" icon="receipt" loading={busy} onClick={async () => { await run(() => api.post("/integrations/run/", { kind: "invoices" }), "دریافت فاکتورها در صف قرار گرفت"); setTimeout(reload, 1500); }}>دریافت فاکتورها</Button>
         </>} />
@@ -160,54 +160,3 @@ export function Integrations() {
   );
 }
 
-/* ---------------- staff users ---------------- */
-export function Staff() {
-  const { data, reload } = useApi<any[]>("/staff/");
-  const { data: provinces } = useProvinces();
-  const [edit, setEdit] = useState<any>(null);
-  const { run, busy } = useAction();
-  return (
-    <>
-      <PageHeader title="کاربران سازمان" subtitle="ادمین، مدیر فروش و کارشناس‌های فروش؛ کارشناس فقط مشتری‌ها و سفارش‌های استان‌های خودش را می‌بیند"
-        actions={<Button icon="plus" onClick={() => setEdit({ username: "", phone: "", first_name: "", last_name: "", role: "sales_rep", regions: [], is_active: true, password: "" })}>کاربر جدید</Button>} />
-      <Card pad={false}>
-        {!data ? <Loading /> : (
-          <div className="px-5 pt-2"><Table>
-            <thead><tr><th className="th">نام</th><th className="th">نام کاربری</th><th className="th">نقش</th><th className="th">مناطق</th><th className="th">مشتری‌ها</th><th className="th">وضعیت</th><th className="th"></th></tr></thead>
-            <tbody>{data.map((u) => (
-              <tr key={u.id}>
-                <td className="td">{u.first_name} {u.last_name}<div className="text-xs text-ink-muted" dir="ltr">{fa(u.phone)}</div></td><td className="td text-xs" dir="ltr">{u.username}</td>
-                <td className="td"><Badge color={u.role === "admin" ? "bad" : u.role === "sales_manager" ? "gold" : "navy"}>{u.role_display}</Badge></td>
-                <td className="td text-xs">{u.regions.map((r: number) => provinces?.find((p) => p.id === r)?.name).filter(Boolean).join("، ") || "—"}</td>
-                <td className="td num">{num(u.customers_count)}</td>
-                <td className="td"><StatusChip status={u.is_active ? "approved" : "suspended"} label={u.is_active ? "فعال" : "غیرفعال"} /></td>
-                <td className="td text-left"><Button size="sm" variant="ghost" icon="edit" onClick={() => setEdit({ ...u, password: "" })}>ویرایش</Button></td>
-              </tr>
-            ))}</tbody>
-          </Table></div>
-        )}
-      </Card>
-      <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.id ? "ویرایش کاربر" : "کاربر جدید"}>
-        {edit && (
-          <form className="grid grid-cols-2 gap-4" onSubmit={async (e) => {
-            e.preventDefault();
-            const body = { ...edit }; if (!body.password) delete body.password;
-            if (await run(() => (edit.id ? api.patch(`/staff/${edit.id}/`, body) : api.post("/staff/", body)), "ذخیره شد")) { setEdit(null); reload(); }
-          }}>
-            <Field label="نام"><Input id="st_fn" value={edit.first_name} onChange={(e) => setEdit({ ...edit, first_name: e.target.value })} /></Field>
-            <Field label="نام خانوادگی"><Input id="st_ln" value={edit.last_name} onChange={(e) => setEdit({ ...edit, last_name: e.target.value })} /></Field>
-            <Field label="نام کاربری"><Input id="st_un" required dir="ltr" value={edit.username} onChange={(e) => setEdit({ ...edit, username: e.target.value })} /></Field>
-            <Field label="موبایل"><Input id="st_ph" dir="ltr" value={edit.phone || ""} onChange={(e) => setEdit({ ...edit, phone: e.target.value })} /></Field>
-            <Field label="نقش"><Select id="st_role" value={edit.role} onChange={(e) => setEdit({ ...edit, role: e.target.value })}><option value="sales_rep">کارشناس فروش</option><option value="sales_manager">مدیر فروش</option><option value="admin">ادمین کل</option></Select></Field>
-            <Field label={edit.id ? "رمز جدید (اختیاری)" : "رمز عبور"}><Input id="st_pw" type="password" dir="ltr" required={!edit.id} value={edit.password} onChange={(e) => setEdit({ ...edit, password: e.target.value })} /></Field>
-            {edit.role === "sales_rep" && <Field label="استان‌های تحت پوشش" className="col-span-2"><div className="flex flex-wrap gap-2">{provinces?.map((p) => (
-              <label key={p.id} className="flex items-center gap-1 text-xs"><input type="checkbox" checked={edit.regions.includes(p.id)} onChange={(e) => setEdit({ ...edit, regions: e.target.checked ? [...edit.regions, p.id] : edit.regions.filter((x: number) => x !== p.id) })} />{p.name}</label>
-            ))}</div></Field>}
-            {edit.id && <label className="flex items-center gap-2 text-sm col-span-2"><input type="checkbox" checked={edit.is_active} onChange={(e) => setEdit({ ...edit, is_active: e.target.checked })} />فعال</label>}
-            <Button className="col-span-2" loading={busy}>ذخیره</Button>
-          </form>
-        )}
-      </Modal>
-    </>
-  );
-}

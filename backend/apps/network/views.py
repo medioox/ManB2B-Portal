@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 
 from apps.accounts.models import Customer
-from apps.core.permissions import IsStaffRole
+from apps.core.permissions import Perm
 from apps.core.services import notify
 from apps.accounts.roles import Role
 
@@ -24,7 +24,7 @@ class ProvinceViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
 
 
 class CoverageViewSet(viewsets.ViewSet):
-    permission_classes = [IsStaffRole]
+    permission_classes = [Perm("network")]
 
     def list(self, request):
         approved = Q(customers__status=Customer.Status.APPROVED)
@@ -56,7 +56,7 @@ class AgencyApplicationViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action == "create":
             return [permissions.AllowAny()]
-        return [IsStaffRole()]
+        return [Perm("network")()]
 
     def get_throttles(self):
         if self.action == "create":
@@ -71,7 +71,9 @@ class AgencyApplicationViewSet(viewsets.ModelViewSet):
         app = serializer.save(status=AgencyApplication.Status.NEW, admin_note="")
         from apps.accounts.models import User
 
-        for m in User.objects.filter(role__in=[Role.ADMIN, Role.SALES_MANAGER], is_active=True):
+        from apps.accounts.perms import users_with_perm
+
+        for m in [u for u in users_with_perm("network") if u.role != Role.SALES_REP]:
             notify(m, "درخواست نمایندگی جدید", f"{app.full_name} - {app.city.name}", link="/admin/network")
 
     @action(detail=False)

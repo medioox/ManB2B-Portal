@@ -61,13 +61,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export const isStaff = (u?: User | null) => !!u && STAFF.includes(u.role);
 export const isCustomer = (u?: User | null) => !!u && CUSTOMER.includes(u.role);
-export const isManager = (u?: User | null) => !!u && (u.role === "admin" || u.role === "sales_manager");
+/** Staff section permission (from the user's position). */
+export const can = (u: User | null | undefined, ...keys: string[]) => !!u && keys.some((k) => (u.permissions ?? []).includes(k));
+export const seesAll = (u?: User | null) => !!u && u.scope === "all";
 export const canFinance = (u?: User | null) => !!u && (u.is_customer_owner || u.can_view_finance);
 export const canOrder = (u?: User | null) => !!u && (u.is_customer_owner || u.can_order);
 
 /** Where a user should land after login. */
 export function homeFor(u: User): string {
-  if (isStaff(u)) return "/admin";
+  if (isStaff(u)) return staffHome(u);
   if (u.customer?.status !== "approved") return "/pending";
   return "/dashboard";
+}
+
+const STAFF_HOME: [string, string][] = [
+  ["dashboard", "/admin"], ["orders", "/admin/orders"], ["customers", "/admin/customers"], ["finance", "/admin/finance"],
+  ["products", "/admin/products"], ["pricing", "/admin/pricing"], ["support", "/admin/tickets"], ["marketing", "/admin/marketing"],
+  ["training", "/admin/training"], ["targets", "/admin/targets"], ["network", "/admin/network"], ["announcements", "/admin/announcements"],
+  ["integrations", "/admin/integrations"], ["users", "/admin/users"],
+];
+export function staffHome(u: User): string {
+  return STAFF_HOME.find(([k]) => can(u, k))?.[1] ?? "/admin/marketing";
 }

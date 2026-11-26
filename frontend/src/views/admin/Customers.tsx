@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import { Icon } from "@/components/icons";
 import { Badge, Button, Card, Empty, ErrorBox, Field, Img, Input, KV, Loading, Modal, PageHeader, Pagination, Select, StatusChip, Table, Tabs, Textarea, useAction } from "@/components/ui";
 import { api, Page } from "@/lib/api";
-import { isManager, useAuth } from "@/lib/auth";
+import { can, useAuth } from "@/lib/auth";
 import { ago, fa, jdate, num, toEnDigits } from "@/lib/format";
 import { useApi, useDebounced } from "@/lib/hooks";
 import { Link, useNav } from "@/lib/nav";
@@ -58,11 +58,11 @@ export default function Customers() {
 export function CustomerReview() {
   const { params, push } = useNav();
   const { user } = useAuth();
-  const manager = isManager(user);
+  const manager = can(user, "customers_manage");
   const { data: c, reload, error } = useApi<Customer>(`/customers/${params.id}/`);
   const { data: groups } = useApi<any[]>(manager ? "/price-groups/" : null);
-  const { data: reps } = useApi<any[]>(manager ? "/staff/" : null, { role: "sales_rep" });
-  const { data: fin } = useApi<any>(c?.status === "approved" ? "/finance/summary/" : null, { customer: params.id });
+  const { data: reps } = useApi<any[]>(manager ? "/staff/" : null, { assignable: 1 });
+  const { data: fin } = useApi<any>(c?.status === "approved" && can(user, "finance", "customers_manage") ? "/finance/summary/" : null, { customer: params.id });
   const { run, busy } = useAction();
   const [f, setF] = useState<any>({});
   const [reject, setReject] = useState(false);
@@ -121,7 +121,7 @@ export function CustomerReview() {
             </div>
           </Card>
         ) : (
-          <Card title="تنظیمات حساب"><KV k="گروه قیمت" v={c.price_group_name || "—"} /><KV k="کارشناس" v={c.sales_rep_name || "—"} /><KV k="سقف اعتبار" v={num(c.credit_limit)} /><p className="text-xs text-ink-muted mt-3">تغییر این موارد با مدیر فروش است.</p></Card>
+          <Card title="تنظیمات حساب"><KV k="گروه قیمت" v={c.price_group_name || "—"} /><KV k="کارشناس" v={c.sales_rep_name || "—"} /><KV k="سقف اعتبار" v={num(c.credit_limit)} /><p className="text-xs text-ink-muted mt-3">تغییر این موارد با سمت‌هایی است که دسترسی «تأیید و تنظیم مشتری» دارند.</p></Card>
         )}
       </div>
       <Modal open={reject} onClose={() => setReject(false)} title="رد درخواست عضویت"

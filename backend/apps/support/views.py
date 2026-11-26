@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from apps.accounts.models import User
 from apps.accounts.roles import Role
 from apps.accounts.scoping import scope_by_customer
-from apps.core.permissions import IsStaffRole
+from apps.core.permissions import Perm, StaffNeeds
 from apps.core.services import notify, notify_customer
 from apps.orders.models import Order
 
@@ -18,7 +18,9 @@ from .serializers import ReturnRequestSerializer, TicketMessageSerializer, Ticke
 
 
 def _staff_for(customer):
-    users = list(User.objects.filter(role=Role.SALES_MANAGER, is_active=True))
+    from apps.accounts.perms import users_with_perm
+
+    users = [u for u in users_with_perm("support") if u.role not in (Role.SALES_REP, Role.ADMIN)]
     if customer.sales_rep:
         users.append(customer.sales_rep)
     return users
@@ -27,6 +29,7 @@ def _staff_for(customer):
 class ReturnRequestViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin,
                            viewsets.GenericViewSet):
     serializer_class = ReturnRequestSerializer
+    permission_classes = [StaffNeeds("support")]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     filterset_fields = ["status", "reason", "customer"]
     search_fields = ["order__number", "customer__business_name"]
@@ -60,7 +63,7 @@ class ReturnRequestViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixin
                    link=f"/admin/returns?id={r.id}")
         return Response(self.get_serializer(r).data, status=201)
 
-    @action(detail=True, methods=["post"], permission_classes=[IsStaffRole])
+    @action(detail=True, methods=["post"], permission_classes=[Perm("support")])
     def set_status(self, request, pk=None):
         r = self.get_object()
         new = request.data.get("status")
@@ -77,6 +80,7 @@ class ReturnRequestViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixin
 class TicketViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin,
                     viewsets.GenericViewSet):
     serializer_class = TicketSerializer
+    permission_classes = [StaffNeeds("support")]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     filterset_fields = ["status", "department", "customer"]
     search_fields = ["subject", "customer__business_name"]

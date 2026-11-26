@@ -52,6 +52,8 @@ const DEMO_STAFF = [
   { u: "admin", p: "admin1234", label: "ادمین کل" },
   { u: "manager", p: "demo1234", label: "مدیر فروش" },
   { u: "rep.south", p: "demo1234", label: "کارشناس فروش جنوب" },
+  { u: "warehouse", p: "demo1234", label: "انباردار (سمت سفارشی)" },
+  { u: "accountant", p: "demo1234", label: "حسابدار شرکت (سمت سفارشی)" },
 ];
 
 export default function Login() {

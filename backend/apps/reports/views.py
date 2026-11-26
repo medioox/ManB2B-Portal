@@ -12,7 +12,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from apps.core.permissions import IsStaffRole
+from apps.core.permissions import Perm
 
 from .services import dashboard
 
@@ -39,7 +39,7 @@ def _cached_dashboard(request):
 
 
 @api_view(["GET"])
-@permission_classes([IsStaffRole])
+@permission_classes([Perm("dashboard")])
 def manager_dashboard(request):
     return Response(_cached_dashboard(request))
 
@@ -56,7 +56,7 @@ SHEETS = [
 
 
 @api_view(["GET"])
-@permission_classes([IsStaffRole])
+@permission_classes([Perm("dashboard")])
 def export_excel(request):
     data = _cached_dashboard(request)
     wb = Workbook()

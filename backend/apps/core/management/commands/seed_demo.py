@@ -8,7 +8,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
-from apps.accounts.models import Customer, CustomerDocument, User
+from apps.accounts.models import Customer, CustomerDocument, Position, User
 from apps.accounts.roles import Role
 from apps.catalog.models import Category, PriceGroup, Product, ProductPrice, VolumeDiscount
 from apps.core.demo_images import banner_image, product_image, text_file
@@ -135,7 +135,15 @@ class Command(BaseCommand):
         # --- staff
         admin = User.objects.filter(username="admin").first() or User.objects.create_superuser("admin", password="admin1234")
         admin.first_name, admin.last_name, admin.phone, admin.role = "ادمین", "فنی", "09120000000", Role.ADMIN
+        admin.position = Position.objects.filter(base_role=Role.ADMIN, is_system=True).first()
         admin.save()
+        Position.objects.filter(is_system=False).delete()
+        wh = Position.objects.create(name="انباردار", description="آماده‌سازی و ارسال سفارش‌ها",
+                                     permissions=["orders", "orders_manage", "support"], scope="all")
+        acc = Position.objects.create(name="حسابدار شرکت", description="چک‌ها، حساب مشتری‌ها و اتصال حسابداری",
+                                      permissions=["dashboard", "customers", "finance", "finance_manage", "integrations"], scope="all")
+        self._staff("warehouse", "09120000005", "مجید", "رستمی", Role.STAFF, wh)
+        self._staff("accountant", "09120000006", "الهام", "نیک‌نام", Role.STAFF, acc)
         manager = self._staff("manager", "09120000001", "نسرین", "توکلی", Role.SALES_MANAGER)
         rep_south = self._staff("rep.south", "09120000002", "آرش", "منصوری", Role.SALES_REP)
         rep_south.regions.set(Province.objects.filter(name__in=["فارس", "خوزستان", "کرمان", "هرمزگان", "یزد"]))
@@ -417,8 +425,10 @@ class Command(BaseCommand):
         SyncLog.objects.create(kind="invoices", items=12, message="12 فاکتور جدید")
         self.stdout.write(self.style.SUCCESS(f"Seeded: {len(customers)} customers, {len(all_orders)} orders."))
 
-    def _staff(self, username, phone, first, last, role):
-        u = User.objects.create(username=username, phone=phone, first_name=first, last_name=last, role=role)
+    def _staff(self, username, phone, first, last, role, position=None):
+        position = position or Position.objects.filter(base_role=role, is_system=True).first()
+        u = User.objects.create(username=username, phone=phone, first_name=first, last_name=last, role=role,
+                                position=position)
         u.set_password("demo1234")
         u.save()
         return u
