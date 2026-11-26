@@ -17,7 +17,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
     pagination_class = None
 
     def get_queryset(self):
-        return Campaign.objects.annotate(assets_count=Count("assets"))
+        return Campaign.objects.annotate(assets_count=Count("assets")).order_by("-created_at")
 
 
 class MarketingAssetViewSet(viewsets.ModelViewSet):

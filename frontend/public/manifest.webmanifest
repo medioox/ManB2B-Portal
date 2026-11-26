@@ -1,0 +1,16 @@
+{
+  "name": "پرتال فروش عمده‌ی مَن",
+  "short_name": "پرتال مَن",
+  "description": "سفارش عمده، پیگیری سفارش و حساب مالی نماینده‌های مَن",
+  "lang": "fa",
+  "dir": "rtl",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F6F0E4",
+  "theme_color": "#1F3A5F",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

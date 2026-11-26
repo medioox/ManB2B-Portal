@@ -13,8 +13,17 @@ NAVY = (31, 58, 95)
 CREAM = (247, 241, 227)
 
 
+try:
+    from PIL import features
+
+    _RAQM = features.check("raqm")
+except Exception:  # noqa: BLE001
+    _RAQM = False
+
+
 def _fa(t):
-    return get_display(arabic_reshaper.reshape(t))
+    # With libraqm Pillow shapes RTL text itself; otherwise reshape + reorder manually.
+    return t if _RAQM else get_display(arabic_reshaper.reshape(t))
 
 
 def product_image(name, color, label=""):

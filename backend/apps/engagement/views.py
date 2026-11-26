@@ -123,7 +123,7 @@ class CourseViewSet(viewsets.ModelViewSet):
             questions_count=Count("questions", distinct=True),
             completed_count=Count("lessons__lessonprogress", filter=Q(lessons__lessonprogress__user=u), distinct=True),
             best_score=Max("attempts__score", filter=Q(attempts__user=u)),
-        )
+        ).order_by("-created_at")
         if u.is_customer:
             qs = qs.filter(is_published=True).filter(Q(audiences=[]) | Q(audiences__contains=[u.role]))
         return qs

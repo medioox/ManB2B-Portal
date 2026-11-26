@@ -110,7 +110,7 @@ class OrderViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
 
     def get_queryset(self):
         u = self.request.user
-        qs = Order.objects.select_related("customer", "city", "sales_rep").annotate(items_count=Count("items"))
+        qs = Order.objects.select_related("customer", "city", "sales_rep").annotate(items_count=Count("items")).order_by("-created_at")
         if u.is_customer and not (u.customer_id and u.customer.status == "approved"):
             raise PermissionDenied("حساب شما هنوز تأیید نشده است.")
         qs = scope_by_customer(qs, u)

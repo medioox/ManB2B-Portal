@@ -46,7 +46,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
         visible = visible_products_for(u)
         return Category.objects.annotate(
             products_count=Count("products", filter=Q(products__in=visible))
-        )
+        ).order_by("order", "name")
 
     def perform_destroy(self, instance):
         if instance.products.exists():
