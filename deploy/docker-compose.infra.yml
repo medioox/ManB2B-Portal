@@ -1,0 +1,72 @@
+# Long-lived infrastructure shared by both colours. Started once; survives app deploys/rollbacks.
+#   docker compose -f deploy/docker-compose.infra.yml --env-file .env up -d
+name: man-infra
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    command: >
+      postgres -c max_connections=200 -c shared_buffers=1GB -c effective_cache_size=3GB
+      -c work_mem=16MB -c maintenance_work_mem=256MB -c wal_level=replica
+      -c checkpoint_completion_target=0.9 -c random_page_cost=1.1
+      -c log_min_duration_statement=500
+    volumes: [pgdata:/var/lib/postgresql/data, ./backups:/backups]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"], interval: 5s, timeout: 3s, retries: 10 }
+    restart: always
+    networks: [man]
+
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.23.1-p3
+    environment:
+      DB_HOST: postgres
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 2000
+      DEFAULT_POOL_SIZE: 40
+      AUTH_TYPE: scram-sha-256
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: always
+    networks: [man]
+
+  redis-cache:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 5s, timeout: 3s, retries: 10 }
+    restart: always
+    networks: [man]
+
+  redis-broker:
+    # Task queue: never evict, persist to disk so queued SMS/accounting jobs survive restarts.
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory-policy", "noeviction"]
+    volumes: [brokerdata:/data]
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 5s, timeout: 3s, retries: 10 }
+    restart: always
+    networks: [man]
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports: ["80:80"]
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/proxy_backend.conf:/etc/nginx/proxy_backend.conf:ro
+      - ./nginx/upstream:/etc/nginx/upstream:ro
+      - media:/srv/media:ro
+    restart: always
+    networks: [man]
+
+volumes:
+  pgdata:
+  brokerdata:
+  media:
+    name: man_media
+
+networks:
+  man:
+    name: man_net

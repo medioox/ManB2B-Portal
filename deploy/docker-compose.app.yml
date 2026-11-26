@@ -1,0 +1,59 @@
+# One application "colour" (blue or green). deploy.sh starts the new colour next to the old one,
+# health-checks it, switches nginx, and keeps the old colour around for instant rollback.
+#   COLOR=green TAG=<git-sha> docker compose -p man-green -f deploy/docker-compose.app.yml up -d
+x-backend: &backend
+  image: ${REGISTRY:-ghcr.io/medioox/manb2b-portal}/backend:${TAG}
+  env_file: ../.env
+  environment:
+    APP_VERSION: ${TAG}
+  volumes: [media:/app/media]
+  restart: always
+  networks: [man]
+
+services:
+  backend:
+    <<: *backend
+    command: ["web"]
+    networks:
+      man:
+        aliases: ["backend-${COLOR}"]
+    deploy:
+      replicas: ${BACKEND_REPLICAS:-3}
+      resources: { limits: { memory: 1g } }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/v1/health/ready/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
+  worker:
+    <<: *backend
+    command: ["worker"]
+    deploy:
+      replicas: ${WORKER_REPLICAS:-2}
+
+  beat:
+    # Singleton scheduler: deploy.sh stops the old colour's beat before starting this one.
+    <<: *backend
+    command: ["beat"]
+    profiles: ["beat"]
+
+  frontend:
+    image: ${REGISTRY:-ghcr.io/medioox/manb2b-portal}/frontend:${TAG}
+    deploy:
+      replicas: ${FRONTEND_REPLICAS:-2}
+    restart: always
+    networks:
+      man:
+        aliases: ["frontend-${COLOR}"]
+
+volumes:
+  media:
+    external: true
+    name: man_media
+
+networks:
+  man:
+    external: true
+    name: man_net

@@ -1,0 +1,78 @@
+# Local development / single-host trial: everything built from source.
+#   cp .env.example .env   (set DJANGO_DEBUG=1, OTP_DEBUG_ECHO=1 for trying it out)
+#   docker compose up --build -d          → http://localhost:8080
+#   docker compose run --rm migrate seed  (demo data)
+# Production uses deploy/ (blue-green, pgbouncer, separate redis for cache and broker).
+name: man-dev
+
+x-backend: &backend
+  build: ./backend
+  env_file: .env
+  environment:
+    POSTGRES_HOST: postgres
+    REDIS_URL: redis://redis:6379/0
+    CELERY_BROKER_URL: redis://redis:6379/1
+    CELERY_RESULT_BACKEND: redis://redis:6379/2
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+  volumes:
+    - media:/app/media
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-man}
+      POSTGRES_USER: ${POSTGRES_USER:-man}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-man}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"], interval: 5s, timeout: 3s, retries: 10 }
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redisdata:/data]
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 5s, timeout: 3s, retries: 10 }
+    restart: unless-stopped
+
+  migrate:
+    <<: *backend
+    command: ["migrate"]
+    restart: "no"
+
+  backend:
+    <<: *backend
+    command: ["web"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  worker:
+    <<: *backend
+    command: ["worker"]
+
+  beat:
+    <<: *backend
+    command: ["beat"]
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports: ["8080:80"]
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/upstream-dev.conf:/etc/nginx/upstream/active.conf:ro
+      - ./deploy/nginx/proxy_backend.conf:/etc/nginx/proxy_backend.conf:ro
+      - media:/srv/media:ro
+    depends_on: [backend, frontend]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  media:

@@ -1,0 +1,61 @@
+# Build immutable images tagged with the commit SHA, push to GHCR, then blue-green deploy over SSH.
+# Rollback: run this workflow with `rollback: true` (previous release) or with an older SHA as `tag`.
+name: Deploy
+on:
+  workflow_dispatch:
+    inputs:
+      environment: { type: choice, options: [staging, production], default: staging }
+      tag: { description: "Image tag to deploy (defaults to this commit)", required: false }
+      rollback: { type: boolean, default: false }
+
+concurrency: { group: deploy-${{ inputs.environment }}, cancel-in-progress: false }
+
+jobs:
+  build:
+    if: ${{ !inputs.rollback && inputs.tag == '' }}
+    runs-on: ubuntu-latest
+    permissions: { contents: read, packages: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/manb2b-portal/backend:${{ github.sha }}
+          build-args: APP_VERSION=${{ github.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+      - uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/manb2b-portal/frontend:${{ github.sha }}
+          build-args: APP_VERSION=${{ github.sha }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+  deploy:
+    needs: [build]
+    if: ${{ always() && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Deploy / rollback on server
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /opt/man-portal
+            git fetch --quiet origin && git checkout --quiet ${{ github.sha }} -- deploy
+            if [ "${{ inputs.rollback }}" = "true" ]; then
+              deploy/scripts/rollback.sh
+            else
+              ROLLBACK_GRACE=300 deploy/scripts/deploy.sh "${{ inputs.tag || github.sha }}"
+            fi

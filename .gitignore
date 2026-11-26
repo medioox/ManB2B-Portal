@@ -11,3 +11,6 @@ demo/dist/
 .DS_Store
 frontend/next-env.d.ts
 frontend/tsconfig.tsbuildinfo
+deploy/.state/
+deploy/backups/
+.env
