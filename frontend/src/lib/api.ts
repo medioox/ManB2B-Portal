@@ -23,11 +23,14 @@ export class ApiError extends Error {
   }
 }
 
+// localStorage with an in-memory fallback (private windows / sandboxed frames can throw).
+const memory: Record<string, string | null> = {};
 const store = {
   get(k: string) {
-    try { return localStorage.getItem(k); } catch { return null; }
+    try { return localStorage.getItem(k); } catch { return memory[k] ?? null; }
   },
   set(k: string, v: string | null) {
+    memory[k] = v;
     try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch { /* storage unavailable */ }
   },
 };

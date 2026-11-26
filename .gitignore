@@ -14,3 +14,4 @@ frontend/tsconfig.tsbuildinfo
 deploy/.state/
 deploy/backups/
 .env
+frontend/demo-build/
