@@ -76,24 +76,25 @@ export default function Login() {
     return () => clearTimeout(t);
   }, [timer]);
 
-  const requestCode = async (p = phone) => {
+  const requestCode = async (p = phone, auto = false) => {
     setBusy(true); setErr(undefined);
     try {
       const r = await api.post("/auth/otp/request/", { phone: toEnDigits(p) });
       setPhone(r.phone); setStep("code"); setTimer(r.ttl);
       setHint(r.debug_code ? `کد آزمایشی: ${fa(r.debug_code)}` : undefined);
       if (r.debug_code && isDemo()) setCode(r.debug_code);
+      if (auto && r.debug_code) return verify(undefined, r.phone, r.debug_code);
     } catch (e) { setErr((e as ApiError).field("phone") || (e as ApiError).message); }
     finally { setBusy(false); }
   };
-  const verify = async (e?: React.FormEvent) => {
+  const verify = async (e?: React.FormEvent, ph = phone, cd = code) => {
     e?.preventDefault();
     setBusy(true); setErr(undefined);
     try {
-      const r = await api.post("/auth/otp/verify/", { phone, code: toEnDigits(code) });
+      const r = await api.post("/auth/otp/verify/", { phone: ph, code: toEnDigits(cd) });
       if (!r.registered) {
-        try { sessionStorage.setItem("man.reg", JSON.stringify({ token: r.registration_token, phone })); } catch { /* */ }
-        (globalThis as any).__MAN_REG__ = { token: r.registration_token, phone };
+        try { sessionStorage.setItem("man.reg", JSON.stringify({ token: r.registration_token, phone: ph })); } catch { /* */ }
+        (globalThis as any).__MAN_REG__ = { token: r.registration_token, phone: ph };
         nav.push("/register");
         return;
       }
@@ -155,7 +156,7 @@ export default function Login() {
           <div className="text-xs font-semibold text-gold mb-2">ورود سریع نسخه‌ی دمو</div>
           <div className="flex flex-wrap gap-1.5">
             {DEMO_USERS.map((d) => (
-              <button key={d.phone} className="chip bg-cream-50 border border-cream-400 text-ink-soft hover:border-navy-300" onClick={() => { setMode("otp"); setPhone(d.phone); requestCode(d.phone); }}>{d.label}</button>
+              <button key={d.phone} className="chip bg-cream-50 border border-cream-400 text-ink-soft hover:border-navy-300" onClick={() => { setMode("otp"); setPhone(d.phone); requestCode(d.phone, true); }}>{d.label}</button>
             ))}
             {DEMO_STAFF.map((d) => (
               <button key={d.u} className="chip bg-navy-50 border border-navy-100 text-navy-600 hover:border-navy-300" onClick={() => staffLogin(undefined, d.u, d.p)}>{d.label}</button>
