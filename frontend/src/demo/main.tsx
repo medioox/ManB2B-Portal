@@ -48,13 +48,13 @@ function DemoBadge() {
 async function boot() {
   const root = createRoot(document.getElementById("app")!);
   try {
-    await initMock("data.json");
+    await initMock(process.env.DEMO_ROUTER === "history" ? "/data.json" : "data.json");
   } catch {
     document.getElementById("app")!.innerHTML = '<p style="padding:2rem">بارگذاری داده‌ی دمو ناموفق بود.</p>';
     return;
   }
   root.render(
-    <HistoryNavProvider mode="memory">
+    <HistoryNavProvider mode={process.env.DEMO_ROUTER === "history" ? "history" : "memory"}>
       <App />
       <DemoBadge />
     </HistoryNavProvider>,

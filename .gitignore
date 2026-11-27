@@ -15,3 +15,5 @@ deploy/.state/
 deploy/backups/
 .env
 frontend/demo-build/
+deploy/demo-server/site/
+deploy/man-demo.tar.gz
